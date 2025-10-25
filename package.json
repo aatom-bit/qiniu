@@ -1,0 +1,19 @@
+{
+  "name": "tts-ws",
+  "version": "1.0.0",
+  "main": "tts-ws-node.js",
+  "scripts": {},
+  "author": "iflytek",
+  "license": "ISC",
+  "dependencies": {
+    "@lydell/node-pty": "^1.1.0",
+    "axios": "^1.12.2",
+    "axois": "^0.0.1-security",
+    "crypto-js": "^3.3.0",
+    "events": "^3.3.0",
+    "log4node": "^0.1.6",
+    "ws": "^7.1.2"
+  },
+  "keywords": [],
+  "description": ""
+}
