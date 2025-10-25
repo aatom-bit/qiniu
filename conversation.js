@@ -5,8 +5,8 @@ class Conversation {
         this.data = {
             "messages": [
                 {
-                "content": role,
-                "role": "system"
+                    "content": role,
+                    "role": "system"
                 },
             ],
             "model": "deepseek-chat",
@@ -25,7 +25,7 @@ class Conversation {
             "tool_choice": "none",
             "logprobs": false,
             "top_logprobs": null
-            };
+        };
 
         this.memory = memory;
         
@@ -37,74 +37,67 @@ class Conversation {
         }
     }
     
-    interact(content, role = null) {
+    async interact(content, role = null) {
         if (!content) {
             console.log('content为空');
-            return;
+            return 'error: 内容为空';
         }
         
-        if (this.memory)
-        {
+        if (this.memory) {
             // 将content添加至上下文尾部
             this.data.messages.push({
                 "content": content,
                 "role": "user",
             });
         } else {
-            let lastIdx = this.data.messages.length-1;
+            let lastIdx = this.data.messages.length - 1;
             this.data.messages[lastIdx].content = content;
         }
 
         if (role) {
             let rawRole = this.data.messages[0].content;
             this.data.messages[0].content = role;
-            const result = this.sendData(this.data);
+            const result = await this.sendData(this.data);
             this.data.messages[0].content = rawRole;
             return result;
         }
-
-        return this.sendData(this.data);
+        
+        return await this.sendData(this.data);
     }
 
-    sendData(info) {
-        let data = JSON.stringify(info);
+    async sendData(info) {
+        try {
+            let data = JSON.stringify(info);
 
-        let config = {
-        method: 'post',
-        maxBodyLength: Infinity,
-        url: 'https://api.deepseek.com/chat/completions',
-        headers: { 
-            'Content-Type': 'application/json', 
-            'Accept': 'application/json', 
-            'Authorization': 'Bearer sk-b840f06a8d054e20bd19bbf0d72f4441'
-        },
-        data : data
-        };
+            let config = {
+                method: 'post',
+                maxBodyLength: Infinity,
+                url: 'https://api.deepseek.com/chat/completions',
+                headers: { 
+                    'Content-Type': 'application/json', 
+                    'Accept': 'application/json', 
+                    'Authorization': 'Bearer sk-b840f06a8d054e20bd19bbf0d72f4441'
+                },
+                data: data
+            };
 
-        axios(config)
-        .then((response) => {
-            const message = JSON.stringify(response.data.choices[0].message);
-            this.data.messages.push(message);
-            
+            const response = await axios(config);
             const result = response.data.choices[0].message.content;
-            console.log(result);
+            console.log('AI 返回:', result);
 
             if (this.memory) {
                 this.data.messages.push({
-                    'role' : 'assistant',
-                    'content' : result,
+                    'role': 'assistant',
+                    'content': result,
                 });
             }
+            
             return result;
-        })
-        .catch((error) => {
-            console.log(error + '\n');
-            return 'error: ' + error;
-        });
+        } catch (error) {
+            console.error('API 调用错误:', error);
+            return `error: ${error.message}`;
+        }
     }
 }
-
-// let conversation = new Conversation();
-// conversation.interact('安装vlc');
 
 module.exports = { Conversation };

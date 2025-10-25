@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Floating Ball</title>
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: transparent;
+        }
+
+        #ball {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #ff9a6b, #ff6b6b);
+        / / box-shadow: 0 0 15 px rgba(0, 0, 0, 0.4);
+            cursor: grab;
+            transition: transform 0.15s;
+        }
+
+        #ball:active {
+            cursor: grabbing;
+            transform: scale(0.95);
+        }
+
+    </style>
+</head>
+<body>
+<div id="ball"></div>
+
+<script type="module">
+    const ball = document.getElementById('ball');
+    let dragging = false, startX = 0, startY = 0;
+    let isBegin = false;
+
+    ball.addEventListener('mousedown', (e) => {
+        dragging = true;
+        startX = e.screenX;
+        startY = e.screenY;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const dx = e.screenX - startX;
+        const dy = e.screenY - startY;
+        window.electronAPI.moveWindow({dx, dy});
+        startX = e.screenX;
+        startY = e.screenY;
+    });
+
+    window.addEventListener('mouseup', () => dragging = false);
+
+    // 双击关闭悬浮球
+    // ball.addEventListener('dblclick', () => window.electronAPI.closeBall());
+    ball.addEventListener('dblclick', async () => {
+        isBegin = !isBegin
+        window.electronAPI.Begin(true, isBegin);
+    });
+</script>
+</body>
+</html>

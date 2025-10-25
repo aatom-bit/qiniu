@@ -19,6 +19,7 @@ class ConsoleAssistant {
         });
         
         this.createNewConsole(0);
+        this.terminal.processDoneCallbacksAddListener(this.onCommandDone.bind(this));
     }
 
     createNewConsole(key) {
@@ -44,27 +45,38 @@ class ConsoleAssistant {
     }
 
     async consoleAssignTask(consoleNum, task, taskCategory = null, correcting = false) {
-        if (!(task || correcting)) {
+        // 修改条件判断：在纠正模式下，task 可以是命令输出
+        if (!task && !correcting) {
             console.log(`consoleAssignTask fail: 未指定任务`);
             return false;
         }
 
         let consoleInfo = this.consoles.get(consoleNum);
         if (!consoleInfo) {
-            this.consoles.createNewConsole(consoleNum);
+            this.createNewConsole(consoleNum);
             consoleInfo = this.consoles.get(consoleNum);
         }
 
-        if (!taskCategory) {
-            taskCategory = this.getTaskCategory(task);
+        // 处理任务和任务类别
+        if (task && !correcting) {
+            // 只有在非纠正模式下才更新任务
+            consoleInfo.lastTask = task;
+        } else if (correcting && consoleInfo.lastTask) {
+            // 在纠正模式下，使用上次的任务，但当前 task 是命令输出
+            // 这里不需要更新 lastTask
+        } else {
+            console.log(`consoleAssignTask fail: 没有可用的任务`);
+            return false;
         }
 
-        consoleInfo.lastTask = task;
+        if (!taskCategory) {
+            taskCategory = await this.getTaskCategory(consoleInfo.lastTask);
+        }
         consoleInfo.taskCategory = taskCategory;
 
         let command = await this.fetchRealCommand(consoleInfo, task, taskCategory, correcting);
-        if (command.startWith('error:')) {
-            // 获取命令错误
+        if (command.startsWith('error:')) {
+            console.log(`获取命令错误，得到: ${command}`);
             return command;
         } else {
             console.log(`将用户的需求转换为sh命令: ${command}`);
@@ -75,9 +87,15 @@ class ConsoleAssistant {
     async fetchRealCommand(consoleInfo, task, taskCategory, correcting = false) {
         let ret = null;
         if (taskCategory === 'code') {
-            ret = await consoleInfo.codeAssistant.interact(task, correcting ? correctAssistantPrompt : null);
+            ret = await consoleInfo.codeAssistant.interact(
+                correcting ? `命令输出: ${task}` : task, 
+                correcting ? correctAssistantPrompt : null
+            );
         } else {
-            ret = await consoleInfo.shellAssistant.interact(task, correcting ? correctAssistantPrompt : null);
+            ret = await consoleInfo.shellAssistant.interact(
+                correcting ? `命令输出: ${task}` : task, 
+                correcting ? correctAssistantPrompt : null
+            );
         }
         return ret;
     }
@@ -86,14 +104,26 @@ class ConsoleAssistant {
         let consoleNum = this.reflectionMap.get(reflectionId);
         let consoleInfo = this.consoles.get(consoleNum);
 
-        if (result === 'ass!fail') {
+        if (!consoleInfo) {
+            console.log(`控制台 ${consoleNum} 不存在`);
+            return;
+        }
 
-        } else if(result !== 'ass!done' && ++consoleInfo.tryCount <= maxRetry)
-        {
-            console.log(`当前任务命令 ${consoleInfo.tryCount} 执行完成，即将执行下一步`);
-            await this.consoleAssignTask(consoleId, '', consoleInfo.lastTaskCategory, correcting);
-        } 
+        console.log(`🔍 AI助手响应: "${result}"`); // 添加调试信息
 
+        // 检查是否应该继续执行
+        if (result && result.includes('ass!done')) {
+            console.log(`✅ 任务完成！`);
+            consoleInfo.tryCount = 0; // 重置重试计数
+        } else if (++consoleInfo.tryCount <= maxRetry) {
+            console.log(`🔄 当前任务命令 ${consoleInfo.tryCount} 执行完成，即将执行下一步`);
+            
+            // 传递完整的输出给AI助手进行判断
+            await this.consoleAssignTask(consoleNum, result, consoleInfo.lastTaskCategory, true);
+        } else {
+            console.log(`❌ 达到最大重试次数 ${maxRetry}，停止执行`);
+            consoleInfo.tryCount = 0; // 重置重试计数
+        }
     }
 
     async getTaskCategory(task) {
@@ -111,5 +141,5 @@ class ConsoleAssistant {
     }
 }
 
-// const console = new ConsoleAssistant();
-// console.consoleAssignTask(0, '帮我卸载vlc');
+// const test_console = new ConsoleAssistant();
+// test_console.consoleAssignTask(0, '帮我卸载vlc');

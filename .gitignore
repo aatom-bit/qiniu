@@ -70,7 +70,9 @@ Thumbs.db
 *.temp
 
 # 测试文件
-*.test.mp3
+.*.mpc
+.*.mp3
+*.mp3
 test-results/
 
 # Electron 打包工具缓存

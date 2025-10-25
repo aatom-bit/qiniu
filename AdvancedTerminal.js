@@ -219,6 +219,7 @@ class AdvancedTerminal extends EventEmitter{
     }
 
     // 在指定进程中执行命令
+    // 在指定进程中执行命令
     executeInProcess = async (processId, command, forceDrive = false) => {
         command = command.trim();
         if (!command) {
@@ -250,7 +251,8 @@ class AdvancedTerminal extends EventEmitter{
         // 重置命令输出状态
         procInfo.expectingCommandOutput = true;
         procInfo.commandOutputBuffer = '';
-        procInfo.isWaitingForConfirmation = false; // 新增：等待确认状态
+        procInfo.isWaitingForConfirmation = false;
+        procInfo.commandComplete = false; // 重置完成状态
 
         // 检查是否含有管理员命令
         let hasSudoCommand = false;
@@ -311,18 +313,23 @@ class AdvancedTerminal extends EventEmitter{
         // 刷新记录
         procInfo.processesOutput = '';
 
+        // 等待命令完成
         return new Promise((resolve) => {
             const timeoutId = setTimeout(() => {
                 procInfo.removeListener('command_complete', onComplete);
                 console.log('\n⏰ 命令执行超时，但进程仍在运行');
                 this.notifyCommandCompletion(processId, procInfo, command, 'timeout');
-                resolve();
+                resolve({ status: 'timeout', output: '' });
             }, 300000); // 5分钟超时
 
-            const onComplete = (output = '') => {
+            const onComplete = (result = {}) => {
                 clearTimeout(timeoutId);
+                const output = result.output || '';
+                const exitCode = result.exitCode || 0;
+                
+                // 确保触发完成通知
                 this.notifyCommandCompletion(processId, procInfo, command, 'completed');
-                resolve();
+                resolve({ status: 'completed', output, exitCode });
             };
 
             procInfo.once('command_complete', onComplete);
@@ -357,7 +364,27 @@ class AdvancedTerminal extends EventEmitter{
         this.activeProcessId = processId;
         this.updatePrompt();
 
-        return this.waitForCommandCompletion(procInfo, processId, command);
+        // 等待命令完成并触发通知
+        return new Promise((resolve) => {
+            const timeoutId = setTimeout(() => {
+                procInfo.removeListener('command_complete', onComplete);
+                console.log('\n⏰ 命令执行超时');
+                this.notifyCommandCompletion(processId, procInfo, command, 'timeout');
+                resolve({ status: 'timeout', output: '' });
+            }, 300000);
+
+            const onComplete = (result = {}) => {
+                clearTimeout(timeoutId);
+                const output = result.output || '';
+                const exitCode = result.exitCode || 0;
+                
+                // 触发完成通知
+                this.notifyCommandCompletion(processId, procInfo, command, 'completed');
+                resolve({ status: 'completed', output, exitCode });
+            };
+
+            procInfo.once('command_complete', onComplete);
+        });
     }
 
     // 改进的shell提示符检测
@@ -439,6 +466,7 @@ class AdvancedTerminal extends EventEmitter{
         
         setTimeout(() => {
             console.log(`🎯 命令执行完成，重新启用用户输入`);
+            // 传递完整的完成信息
             procInfo.emit('command_complete', {
                 output: outputBuffer,
                 exitCode: 0
@@ -666,12 +694,6 @@ class AdvancedTerminal extends EventEmitter{
         // 简化检测：只要包含 $ 或 # 并且包含用户名@主机名就认为是提示符
         if (lastLine.includes('$') && lastLine.includes('@') && lastLine.includes(':') && procInfo.expectingCommandOutput) {
             console.log(`✅ 检测到简化版命令完成！`);
-            return true;
-        }
-        
-        // 或者检测是否包含完整的路径提示符
-        if (lastLine.includes('whitedx@WhiteHoleX:') && procInfo.expectingCommandOutput) {
-            console.log(`✅ 检测到特定用户命令完成！`);
             return true;
         }
         
@@ -919,6 +941,11 @@ class AdvancedTerminal extends EventEmitter{
         const currentTime = new Date();
         const duration = currentTime - procInfo.startTime;
         processFinData += `   耗时: ${duration}ms\n`;
+
+        if (procInfo.processesOutput) {
+            const lastOutput = procInfo.processesOutput;
+            processFinData += `   完整输出: ${lastOutput}\n`;
+        }
         
         console.log('\n' + processFinData);
         
@@ -960,7 +987,7 @@ class AdvancedTerminal extends EventEmitter{
         
         if (procInfo.processesOutput) {
             const lastOutput = procInfo.processesOutput;
-            processFinData += `   输出预览: ${lastOutput}\n`;
+            processFinData += `   完整输出: ${lastOutput}\n`;
         }
         
         console.log('\n' + processFinData);
