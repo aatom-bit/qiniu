@@ -17,6 +17,8 @@ class ConsoleAssistant {
             role: taskCategoryJudgementPrompt,
             memory: false,
         });
+
+        this.taskCompleteCallback = []; //callback sign like (isCompelted, consoleNum)
         
         this.createNewConsole(0);
         this.terminal.processDoneCallbacksAddListener(this.onCommandDone.bind(this));
@@ -115,6 +117,10 @@ class ConsoleAssistant {
         if (result && result.includes('ass!done')) {
             console.log(`✅ 任务完成！`);
             consoleInfo.tryCount = 0; // 重置重试计数
+
+            this.taskCompleteCallbackAddlistener.forEach(callback => {
+                callback(true, consoleNum);
+            });
         } else if (++consoleInfo.tryCount <= maxRetry) {
             console.log(`🔄 当前任务命令 ${consoleInfo.tryCount} 执行完成，即将执行下一步`);
             
@@ -123,6 +129,10 @@ class ConsoleAssistant {
         } else {
             console.log(`❌ 达到最大重试次数 ${maxRetry}，停止执行`);
             consoleInfo.tryCount = 0; // 重置重试计数
+
+            this.taskCompleteCallbackAddlistener.forEach(callback => {
+                callback(false, consoleNum);
+            });
         }
     }
 
@@ -137,9 +147,28 @@ class ConsoleAssistant {
     }
 
     async getPassword() {
+        // TODO: 在这里实现弹出一个密码输入窗口，让用户输入密码
+    }
 
+    taskCompleteCallbackAddlistener(event) {
+        if(event) {
+            this.taskCompleteCallback.push(event);
+        }
     }
 }
 
+// 使用示例
 // const test_console = new ConsoleAssistant();
-// test_console.consoleAssignTask(0, '帮我卸载vlc');
+
+// // 范例回调
+// // 参数1表示是否完成任务[true 或者 false],
+// // 参数2表示对应的窗口是哪个(就是test_console.consoleAssignTask的第一个参数)
+// sampleCallback = (isCompelted, consoleNum) => {
+//     // 这里当任务完成时的响应，比如小球闪动，发送文字提示用户完成
+//     console.log(`任务 ${consoleNum} ${ isCompelted ? '已完成' : '执行失败'}`);
+// }
+// // 添加任务执行完成的回调，这样才能通知用户任务执行完成
+// test_console.taskCompleteCallback(sampleCallback.bind(this));
+
+// // 反复调用下面的方法执行用户操作，第一个参数用来指定使用哪个窗口(可以随便填，相同窗口会继承记忆)
+// test_console.consoleAssignTask(0, '帮我安装vlc');
