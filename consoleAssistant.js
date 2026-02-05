@@ -6,6 +6,8 @@ const taskCategoryJudgementPrompt = '你是一个linux助手，现在要判断�
 const correctAssistantPrompt = '你是一个linux助手,你已经根据用户的需求生成对应的sh指令，已知命令结束得到返回，请检查命令结果，如果完成目标返回"ass!done";否则返回下一步命令，仅包含命令，下面是命令结果。';
 const codeAssistantPrompt = '你是一个linux助手,你需要根据用户的需求生成对应的代码，并通过sh在命令行中完成操作，仅返回可在命令行中执行的命令，下面是用户指令。';
 
+const normalAssistantPrompt = '你是一个linux平台下的ai助手';
+
 const maxRetry = 10;
 
 class ConsoleAssistant {
@@ -15,6 +17,10 @@ class ConsoleAssistant {
         this.terminal = new AdvancedTerminal(this.getPassword);
         this.taskCategoryJudgement = new Conversation({
             role: taskCategoryJudgementPrompt,
+            memory: false,
+        });
+        this.normalAssistant = new Conversation({
+            role: normalAssistantPrompt,
             memory: false,
         });
 
@@ -107,7 +113,7 @@ class ConsoleAssistant {
         let consoleInfo = this.consoles.get(consoleNum);
 
         if (!consoleInfo) {
-            console.log(`控制台 ${consoleNum} 不存在`);
+            console.log(`❌ 控制台 ${consoleNum} 不存在!将无法执行后续shell操作 (reflectionId: ${reflectionId})`);
             return;
         }
 
@@ -150,6 +156,15 @@ class ConsoleAssistant {
         // TODO: 在这里实现弹出一个密码输入窗口，让用户输入密码
     }
 
+    async normalConversation(content) {
+        let ret = await this.taskCategoryJudgement.interact(content);
+        return ret;
+    }
+
+    async directRun(command) {
+        return await this.terminal.executeCommand(command, consoleInfo.processId);
+    }
+
     taskCompleteCallbackAddlistener(event) {
         if(event) {
             this.taskCompleteCallback.push(event);
@@ -157,7 +172,9 @@ class ConsoleAssistant {
     }
 }
 
-// 使用示例
+module.exports = { ConsoleAssistant };
+
+// // 使用示例
 // const test_console = new ConsoleAssistant();
 
 // // 范例回调
@@ -168,7 +185,7 @@ class ConsoleAssistant {
 //     console.log(`任务 ${consoleNum} ${ isCompelted ? '已完成' : '执行失败'}`);
 // }
 // // 添加任务执行完成的回调，这样才能通知用户任务执行完成
-// test_console.taskCompleteCallback(sampleCallback.bind(this));
+// test_console.taskCompleteCallbackAddlistener(sampleCallback.bind(this));
 
 // // 反复调用下面的方法执行用户操作，第一个参数用来指定使用哪个窗口(可以随便填，相同窗口会继承记忆)
 // test_console.consoleAssignTask(0, '帮我安装vlc');

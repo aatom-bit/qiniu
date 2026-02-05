@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+// const { spawn } = require('child_process');
 const readline = require('readline');
 const { randomUUID } = require('crypto');
 const EventEmitter = require('events');
@@ -86,6 +86,7 @@ class AdvancedTerminal extends EventEmitter{
         this.processDoneCallbacks = []; // 命令执行完成回调
         this.processErrorCallbacks = []; // 命令错误回调
         this.history = [];
+        this.ANSI_REGEX = /\u001b\[[0-9;]*[mGJKHF]/g;
         this.setupReadline();
         this.showWelcome();
 
@@ -212,10 +213,9 @@ class AdvancedTerminal extends EventEmitter{
 
         // 如果有活跃进程，在指定进程中执行
         if (this.activeProcessId) {
-            await this.executeInActiveProcess(command);
-        } else {
-            await this.createNewProcess(command);
+            return await this.executeInActiveProcess(command);
         }
+        return await this.createNewProcess(command);
     }
 
     // 在指定进程中执行命令
@@ -353,7 +353,11 @@ class AdvancedTerminal extends EventEmitter{
 
         // 创建PTY进程
         const ptyProcess = this.createPtyProcess(command);
-        
+        if (!ptyProcess) {
+            console.log(`❌ 进程创建失败`);
+            return;
+        }
+        // console.log(` ${JSON.stringify(ptyProcess)}`);
         // 初始化进程信息
         const procInfo = this.initializeProcessInfo(ptyProcess, command, processId);
         
@@ -374,6 +378,7 @@ class AdvancedTerminal extends EventEmitter{
             }, 300000);
 
             const onComplete = (result = {}) => {
+                // console.log("in onComplete!");
                 clearTimeout(timeoutId);
                 const output = result.output || '';
                 const exitCode = result.exitCode || 0;
@@ -387,28 +392,36 @@ class AdvancedTerminal extends EventEmitter{
         });
     }
 
-    // 改进的shell提示符检测
+    // shell提示符检测
     isShellPrompt(output) {
-        const promptPatterns = [
-            /\$$/, // bash提示符
-            /#\s*$/, // root提示符
-            />\s*$/, // 其他shell提示符
-            /\[.*\]\s*[$#]\s*$/, // 带路径的提示符
-            /[\w]+@[\w]+:[~/].*[$#]\s*$/, // user@host:path提示符
-            /bash-\d+\.\d+[#$]\s*$/, // bash版本提示符
-            /\\n.*[$#]\s*$/ // 包含换行的提示符
-        ];
-        
-        const lines = output.split('\n');
+        if (!output) return false;
+        // 1. 移除 ANSI 转义字符 (颜色、光标移动等)
+        const cleanOutput = output.replace(this.ANSI_REGEX, '');
+
+        // 2. 取最后一行并彻底 trim
+        const lines = cleanOutput.split(/\r?\n/);
         const lastLine = lines[lines.length - 1].trim();
+
+        // 如果最后一行是空的，通常不是提示符
+        if (!lastLine) return false;
+
+        // 3. 改进的匹配模式
+        const promptPatterns = [
+            /[$#%>]\s*$/,                         // 基础符号: $, #, %, >
+            /[\w.-]+@[\w.-]+:.*[$#%]\s*$/,        // 标准 Linux: user@host:path$
+            /\[.*\]\s*[$#%]\s*$/,                 // 带中括号的提示符: [user@host path]$
+            /PS [A-Z]:\\.*>\s*$/,                 // Windows PowerShell
+            /bash-\d+\.\d+[$#]\s*$/               // 特殊 Bash 版本
+        ];
+
+        const isMatch = promptPatterns.some(pattern => pattern.test(lastLine));
         
-        for (const pattern of promptPatterns) {
-            if (pattern.test(lastLine)) {
-                return true;
-            }
+        // 调试日志：如果没匹配上，看看最后一行到底长什么样
+        if (!isMatch && lastLine.length > 0) {
+            // console.log(`DEBUG: Last line content: "${lastLine}" (No match)`);
         }
-        
-        return false;
+
+        return isMatch;
     }
 
     waitForCommandCompletion(procInfo, processId, command) {
@@ -420,7 +433,7 @@ class AdvancedTerminal extends EventEmitter{
                     procInfo.process.kill();
                 }
                 resolve();
-            }, 300000);
+            }, 30000);
 
             const onComplete = (result) => {
                 clearTimeout(timeoutId);
@@ -586,7 +599,7 @@ class AdvancedTerminal extends EventEmitter{
             ptyProcess.write(command + '\r\n');
             procInfo.userInputEnabled = false;
             procInfo.initialPromptReceived = true;
-            procInfo.expectingCommandOutput = true;  // 开始期待命令输出
+            procInfo.expectingCommandOutput = true;  // 开始等待命令输出
             this.updatePrompt();
         }, 100);
     }
@@ -689,7 +702,7 @@ class AdvancedTerminal extends EventEmitter{
         const lines = output.split('\n');
         const lastLine = lines[lines.length - 1].trim();
         
-        console.log(`🔍 检测命令完成 - 最后一行: "${lastLine}"`);
+        // console.log(`🔍 检测命令完成 - 最后一行: "${lastLine}"`);
         
         // 简化检测：只要包含 $ 或 # 并且包含用户名@主机名就认为是提示符
         if (lastLine.includes('$') && lastLine.includes('@') && lastLine.includes(':') && procInfo.expectingCommandOutput) {
@@ -932,7 +945,7 @@ class AdvancedTerminal extends EventEmitter{
     async notifyCommandCompletion(processId, procInfo, command, status) {
         const statusIcon = status === 'completed' ? '✅' : '⏰';
         
-        let processFinData = `🎯 ${statusIcon} 命令执行完成:\n`;
+        let processFinData = `🎯 ${statusIcon} 命令执行结束:\n`;
         processFinData += `   PID: ${processId}\n`;
         processFinData += `   命令: ${command}\n`;
         processFinData += `   状态: ${status === 'completed' ? '完成' : '超时'}\n`;

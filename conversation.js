@@ -82,6 +82,10 @@ class Conversation {
             };
 
             const response = await axios(config);
+
+            if (response.status != 200) {
+                return `error: ${response.error}`;
+            }
             const result = response.data.choices[0].message.content;
             console.log('AI 返回:', result);
 

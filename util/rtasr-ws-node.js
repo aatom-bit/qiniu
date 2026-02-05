@@ -32,7 +32,7 @@ function send(micInputStream, ws, isLongPress) {
 
 
     console.log("Mic opening")
-    if (!isLongPress) CloseAfter5s();
+    if (!isLongPress) ListenCloseAfter5s();
     micInputStream.on('data', (chunk) => {
         seq++;
         let frameStatus = status;
@@ -95,80 +95,106 @@ function send(micInputStream, ws, isLongPress) {
     });
 }
 
-async function Begin(isLongPress) {
-    ws = null;
-    mic = null;
+async function Listen(isLongPress) {
+    return new Promise((resolve, reject) => {
+        let ws = null;
+        let mic = null;
 
-    const wsUrl = getWsUrl(hostUrl, apiKey, apiSecret);
-    ws = new WebSocket(wsUrl);
+        const wsUrl = getWsUrl(hostUrl, apiKey, apiSecret);
+        ws = new WebSocket(wsUrl);
 
-    let res = "";
-    let last = ""
+        // let res = "";
+        // let last = "";
 
-    mic = Mic({
-        rate: '16000',
-        channels: '1',
-        bitwidth: '16',
-        encoding: 'signed-integer',
-    });
+        mic = Mic({
+            rate: '16000',
+            channels: '1',
+            bitwidth: '16',
+            encoding: 'signed-integer',
+        });
+        let finalResult = "";
 
-    ws.on('open', () => {
-        console.log("WebSocket connected. Start sending audio...");
-        mic.start();
-        const micInputStream = mic.getAudioStream();
-        send(micInputStream, ws, isLongPress);
-    });
-
-    ws.on('message', (data) => {
-        const message = JSON.parse(data.toString());
-        if (message.header && message.header.code !== 0) {
-            console.error(`Error code: ${message.header.code}, message: ${message.header.message}`);
-            return;
-        }
-
-        if (message.payload && message.payload.result) {
-            const result = message.payload.result;
-            if (result.text) {
-                const decoded = Buffer.from(result.text, 'base64').toString('utf8');
-                const jsonRes = JSON.parse(decoded);
-                let text = "";
-                jsonRes.ws.forEach(wsItem => {
-                    wsItem.cw.forEach(cw => {
-                        text += cw.w;
-                    });
-                });
-                console.log("Intermediate result:", text);
-
-                // if (message.header.status !== 0 && text.length < last) {
-                //     res += last;
-                // }
-                // last = text;
+        ws.on('message', (data) => {
+            const message = JSON.parse(data.toString());
+            if (message.payload && message.payload.result) {
+                const result = message.payload.result;
+                if (result.text) {
+                    const decoded = Buffer.from(result.text, 'base64').toString('utf8');
+                    const jsonRes = JSON.parse(decoded);
+                    let tempText = "";
+                    jsonRes.ws.forEach(wsItem => wsItem.cw.forEach(cw => tempText += cw.w));
+                    
+                    if (result.status === 2) {
+                        finalResult += tempText;
+                    }
+                }
             }
+        });
 
-            if (result.status === 2) {
-                console.log("Final result received. Closing WebSocket.");
-                ws.close();
-            }
-        }
-    });
+        ws.on('close', () => {
+            console.log("识别结束:", finalResult);
+            resolve(finalResult); // 返回最终识别的文本
+        });
 
-    ws.on('close', () => {
-        // console.log("转换结果为：" + res);
-        console.log("WebSocket closed.");
-        return res;
-    });
+        ws.on('open', () => {
+            console.log("WebSocket connected. Start sending audio...");
+            mic.start();
+            const micInputStream = mic.getAudioStream();
+            send(micInputStream, ws, isLongPress);
+        });
 
-    ws.on('error', (err) => {
-        console.error("WebSocket error:", err);
+        // ws.on('message', (data) => {
+        //     const message = JSON.parse(data.toString());
+        //     if (message.header && message.header.code !== 0) {
+        //         console.error(`Error code: ${message.header.code}, message: ${message.header.message}`);
+        //         return;
+        //     }
+
+        //     if (message.payload && message.payload.result) {
+        //         const result = message.payload.result;
+        //         if (result.text) {
+        //             const decoded = Buffer.from(result.text, 'base64').toString('utf8');
+        //             const jsonRes = JSON.parse(decoded);
+        //             let text = "";
+        //             jsonRes.ws.forEach(wsItem => {
+        //                 wsItem.cw.forEach(cw => {
+        //                     text += cw.w;
+        //                 });
+        //             });
+        //             console.log("Intermediate result:", text);
+
+        //             // if (message.header.status !== 0 && text.length < last) {
+        //             //     res += last;
+        //             // }
+        //             // last = text;
+        //         }
+
+        //         if (result.status === 2) {
+        //             console.log("Final result received. Closing WebSocket.");
+        //             ws.close();
+        //         }
+        //     }
+        // });
+
+        // ws.on('close', () => {
+        //     // console.log("转换结果为：" + res);
+        //     console.log("WebSocket closed.");
+        //     return res;
+        // });
+
+        ws.on('error', (err) => {
+            console.error("WebSocket error:", err);
+        });
+
     });
 }
 
-function Close() {
+function ListenClose() {
     if (mic !== null) mic.stop();
     if (ws !== null) ws.close();
 }
 
-function CloseAfter5s() {
+function ListenCloseAfter5s() {
     setTimeout(() => {
         if (mic !== null) mic.stop();
         if (ws !== null) ws.close();
@@ -181,7 +207,7 @@ function CloseAfter5s() {
 
 
 module.exports = {
-    Begin,
-    CloseAfter5s,
-    Close
+    Listen,
+    ListenCloseAfter5s,
+    ListenClose
 }
