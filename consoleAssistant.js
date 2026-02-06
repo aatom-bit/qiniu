@@ -181,7 +181,7 @@ class ConsoleAssistant {
 
 module.exports = { ConsoleAssistant };
 
-// // 使用示例
+// 使用示例
 // const test_console = new ConsoleAssistant();
 
 // // 范例回调
@@ -195,4 +195,5 @@ module.exports = { ConsoleAssistant };
 // test_console.taskCompleteCallbackAddlistener(sampleCallback.bind(this));
 
 // // 反复调用下面的方法执行用户操作，第一个参数用来指定使用哪个窗口(可以随便填，相同窗口会继承记忆)
-// test_console.consoleAssignTask(0, '帮我安装vlc');
+// let ret = test_console.consoleAssignTask(0, '帮我安装vlc');
+// console.log(`ret: ${ ret }`);

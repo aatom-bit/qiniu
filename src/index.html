@@ -172,7 +172,8 @@
         // TODO:测试完成时取消以下注释
         const response = await window.electronAPI.sendMessage({
             text: text,
-            sessionId: state.currentSessionIndex
+            sessionId: state.currentSessionIndex,
+            sessionCount: state.history.length
         });
         // 更新助手回复
         state.history[state.currentSessionIndex].messages.push({ role: 'assistant', content: response });

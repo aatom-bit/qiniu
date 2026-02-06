@@ -1,8 +1,8 @@
-const {app, BrowserWindow, ipcMain, session} = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
-const {Listen, ListenClose} = require('./util/rtasr-ws-node.js');
-const { loadHistory, saveHistory, initHistory } = require('./util/historyStore.js');
-const { ConsoleAssistant } = require('./consoleAssistant.js');
+const { Listen, ListenClose } = require('./util/rtasr-ws-node.js');
+const { loadHistory, saveHistory, initHistory, getSession } = require('./util/historyStore');
+const { ConsoleAssistant } = require('./consoleAssistant');
 
 // 代替默认终端输出，自动保存为log
 const log = require('electron-log');
@@ -122,9 +122,9 @@ function getAiDecision(content) {
  * @param {string} content 用户输入的文本
  * @param {number} sessionId 当前会话索引
  */
-async function handleUserInput(content, sessionId) {
+async function handleUserInput(content, sessionId, sessionCount = -1) {
     const decision = getAiDecision(content); // 之前写的意图识别函数
-    const session = chatHistory[sessionId];
+    const session = getSession(chatHistory, sessionId, true, sessionCount);;
     
     // 1. 先把用户的提问存入历史记录
     session.messages.push({ role: 'user', content: content });
@@ -183,33 +183,6 @@ async function handleUserInput(content, sessionId) {
     return aiFinalContent;
 }
 
-// async function handleUserInput(content) {
-//     const decision = getAiDecision(content);
-
-//     if (decision === 'command') {
-//         // 执行命令
-//         mainWin.webContents.send('update-status', { role: 'ai', content: `正在执行: ${decision.content}` });
-//         const ret = await consoleAssistant.consoleAssignTask(0, content);
-        
-//         // 4. TTS 播报结果
-//         // const ttsBuffer = await getTTSVoice(`命令执行完毕。${result.output.substring(0, 50)}`);
-//         // await playAudio(ttsBuffer);
-        
-//         mainWin.webContents.send('update-status', { role: 'ai', content: result.output });
-//         return ret;
-//     } else {
-//         // 纯聊天内容
-//         const ret = await consoleAssistant.normalConversation(content);
-
-//         mainWin.webContents.send('update-status', { role: 'ai', content: ret });
-
-//         // const ttsBuffer = await getTTSVoice(decision.content);
-//         // await playAudio(ttsBuffer);
-//         mainWin.webContents.send('update-status', { role: 'ai', content: decision.content });
-//         return ret;
-//     }
-// }
-
 function onCommandFinished(isCompelted, consoleNum) {
     return `任务 ${ isCompelted ? '已完成' : '执行失败'}`;
 }
@@ -246,21 +219,27 @@ ipcMain.handle('chat:session-switch', (sessionId) => {
 });
 
 // 处理 AI 消息
-ipcMain.handle('chat:send', async (event, { text, sessionId }) => {
-    // 对话逻辑
-    const result = await handleUserInput(text, sessionId);
+ipcMain.handle('chat:send', async (event, { text, sessionId, sessionCount }) => {
+    let result = '';
+    try {
+        // 对话逻辑
+        result = await handleUserInput(text, sessionId, sessionCount);
 
-    // 更新记录
-    const session = chatHistory[sessionId];
-    session.messages.push({ role: 'user', content: text });
-    session.messages.push({ role: 'assistant', content: aiResponse });
-    
-    // 如果是第一条，更新标题
-    if (session.messages.length === 2) {
-        session.title = text.substring(0, 15);
+        // 更新记录
+        const session = getSession(chatHistory, sessionId, true, sessionCount);
+        session.messages.push({ role: 'user', content: text });
+        session.messages.push({ role: 'assistant', content: result.output });
+        
+        // 如果是第一条，更新标题
+        if (session.messages.length <= 2) {
+            session.title = text.length > 5 ? `${text.substring(0, 5)}...` : text;
+        }
+
+        saveHistory(chatHistory);
+    } catch (error) {
+        console.log(`chat:send in main.js 异常: ${error}`);
+        result = `获取ai助手执行结果失败, error: ${error}`;
     }
-
-    saveHistory(chatHistory);
     return result;
 });
 

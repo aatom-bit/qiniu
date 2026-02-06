@@ -80,8 +80,7 @@
             if (!hasMoved && dragging) {
                 isLongPressActive = true;
                 console.log("触发长按：开始录音");
-                // TODO:测试完成时取消以下注释
-                // window.electronAPI.Listen(true, true); // 参数1: isLongPress=true, 参数2: isBegin=true
+                window.electronAPI.Listen(true, true); // 参数1: isLongPress=true, 参数2: isBegin=true
                 setBallColor('recording');
             }
         }, 250);
@@ -124,7 +123,6 @@
         if (isLongPressActive) {
             // 如果刚才处于长按录音状态，抬起即停止
             console.log("长按结束：停止录音");
-            // TODO:测试完成时取消以下注释
             // window.electronAPI.Listen(true, false); // 发送停止指令
             isLongPressActive = false;
             setBallColor(isBegin ? 'active' : 'default'); // 恢复颜色
@@ -150,8 +148,6 @@
     ball.addEventListener('selectstart', (e) => {
         e.preventDefault();
     });
-
-    //TODO: 添加对悬浮球监听，实现松开悬浮球发送收到的文本内容
 </script>
 </body>
 </html>

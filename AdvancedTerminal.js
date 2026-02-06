@@ -196,26 +196,31 @@ class AdvancedTerminal extends EventEmitter{
 
     // 执行命令, 建议使用这个api
     async executeCommand(command, processId = null) {
-        if (processId) {
-            // 如果当前运行的id就是指定进程id时
-            if (this.activeProcessId === processId) {
+        console.log(`executeCommand: processId is ${processId}`);
+        try {
+            if (processId) {
+                // 如果当前运行的id就是指定进程id时
+                if (this.activeProcessId === processId) {
+                    return await this.executeInActiveProcess(command);
+                }
+
+                let processInfo = this.processes.get(processId);
+                if (processInfo) {
+                    // 已经存在目标进程id
+                    return await this.executeInProcess(command, processId);
+                }
+                // 否则创建新进程
+                return await this.createNewProcess(command, processId);
+            }
+
+            // 如果有活跃进程，在指定进程中执行
+            if (this.activeProcessId) {
                 return await this.executeInActiveProcess(command);
             }
-
-            let processInfo = this.processes.get(processId);
-            if (processInfo) {
-                // 已经存在目标进程id
-                return await this.executeInProcess(command, processId);
-            }
-            // 否则创建新进程
-            return await this.createNewProcess(command, processId);
+            return await this.createNewProcess(command);
+        } catch (error) {
+            return `❌ command {${command}} 执行失败, error: ${error}`;
         }
-
-        // 如果有活跃进程，在指定进程中执行
-        if (this.activeProcessId) {
-            return await this.executeInActiveProcess(command);
-        }
-        return await this.createNewProcess(command);
     }
 
     // 在指定进程中执行命令

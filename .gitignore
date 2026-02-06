@@ -75,6 +75,11 @@ Thumbs.db
 *.mp3
 test-results/
 
+# 压缩包
+*.zip
+*.7z
+*.rar
+
 # Electron 打包工具缓存
 .electron-builder
 appx/

@@ -24,19 +24,21 @@ function initHistory() {
     }
 }
 
-function getSession(history, idx, expand = true) {
+function getSession(history, idx, expand = true, targetRange = -1) {
     if (idx < 0 || !(history || Array.isArray(history))) {
         return null
     }
 
-    if (expand && idx >= history.length) {
-        let range = idx + 1 - history.length; 
-        for (let i = 0;i < range;i++) {
+    if (expand) {
+        let target = targetRange > idx + 1 ? targetRange : idx + 1;
+
+        for (let i = history.length;i < target;i++) {
             history.unshift({ title: '新会话', messages: [] })
         }
+    } else if (idx >= history.length) {
+        return null;
     }
     const session = history[idx];
     return session;
 }
-
 module.exports = { saveHistory, loadHistory, initHistory, getSession };

@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 class Conversation {
-    constructor(role = '你是一个linux助手,你需要根据用户的需求生成对应的sh指令，仅包含命令，下面是用户指令。', temperature = 0.5, memory = true) {
+    constructor({ role = '你是一个linux助手,你需要根据用户的需求生成对应的sh指令，仅包含命令，下面是用户指令。', temperature = 0.5, memory = true } = {}) {
         this.data = {
             "messages": [
                 {
@@ -61,7 +61,6 @@ class Conversation {
             this.data.messages[0].content = rawRole;
             return result;
         }
-        
         return await this.sendData(this.data);
     }
 
@@ -82,10 +81,6 @@ class Conversation {
             };
 
             const response = await axios(config);
-
-            if (response.status != 200) {
-                return `error: ${response.error}`;
-            }
             const result = response.data.choices[0].message.content;
             console.log('AI 返回:', result);
 
