@@ -1,8 +1,8 @@
 const {app, BrowserWindow, ipcMain, session} = require('electron');
 const path = require('path');
 const {Listen, ListenClose} = require('./util/rtasr-ws-node.js');
-const { loadHistory, saveHistory, initHistory } = require('./util/historyStore');
-const { ConsoleAssistant } = require('./consoleAssistant');
+const { loadHistory, saveHistory, initHistory } = require('./util/historyStore.js');
+const { ConsoleAssistant } = require('./consoleAssistant.js');
 
 // 代替默认终端输出，自动保存为log
 const log = require('electron-log');

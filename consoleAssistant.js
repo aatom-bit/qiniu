@@ -52,6 +52,13 @@ class ConsoleAssistant {
         }
     }
 
+    /**
+     * [不安全] 直接识别用户需求并更新代码
+     * @param {number} consoleNum 对话窗口编号
+     * @param {string} task 用户以自然语言描述的任务需求
+     * @param {string} taskCategory 任务类型(shell/code 协助), 为 null 时自动选择
+     * @param {boolean} correcting 是否用于修正最开始的需求
+     * */ 
     async consoleAssignTask(consoleNum, task, taskCategory = null, correcting = false) {
         // 修改条件判断：在纠正模式下，task 可以是命令输出
         if (!task && !correcting) {

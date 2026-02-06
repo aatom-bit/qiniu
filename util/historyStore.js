@@ -24,4 +24,19 @@ function initHistory() {
     }
 }
 
-module.exports = { saveHistory, loadHistory, initHistory };
+function getSession(history, idx, expand = true) {
+    if (idx < 0 || !(history || Array.isArray(history))) {
+        return null
+    }
+
+    if (expand && idx >= history.length) {
+        let range = idx + 1 - history.length; 
+        for (let i = 0;i < range;i++) {
+            history.unshift({ title: '新会话', messages: [] })
+        }
+    }
+    const session = history[idx];
+    return session;
+}
+
+module.exports = { saveHistory, loadHistory, initHistory, getSession };
