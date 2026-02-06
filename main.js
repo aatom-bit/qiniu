@@ -124,12 +124,12 @@ function getAiDecision(content) {
  */
 async function handleUserInput(content, sessionId, sessionCount = -1) {
     const decision = getAiDecision(content); // 之前写的意图识别函数
-    const session = getSession(chatHistory, sessionId, true, sessionCount);;
+    const session = getSession(chatHistory, sessionId, true, sessionCount);
     
     // 1. 先把用户的提问存入历史记录
     session.messages.push({ role: 'user', content: content });
 
-    let aiFinalContent = ""; // 用于最终保存的 AI 回复内容
+    var aiFinalContent = ""; // 用于最终保存的 AI 回复内容
 
     try {
         if (decision === 'command') {
@@ -151,8 +151,7 @@ async function handleUserInput(content, sessionId, sessionCount = -1) {
         } else {
             // 纯聊天内容
             let ret = await consoleAssistant.normalConversation(content);
-            let output = ret?.output;
-            aiFinalContent = output ? output : `ai agent发生错误`;
+            aiFinalContent = ret ? ret : `ai agent发生错误`;
         }
         // TTS 播报结果
             // const ttsBuffer = await getTTSVoice(`执行完毕。${aiFinalContent.substring(0, 50)}`);
@@ -220,22 +219,11 @@ ipcMain.handle('chat:session-switch', (sessionId) => {
 
 // 处理 AI 消息
 ipcMain.handle('chat:send', async (event, { text, sessionId, sessionCount }) => {
-    let result = '';
+    var result = '';
     try {
         // 对话逻辑
-        result = await handleUserInput(text, sessionId, sessionCount);
-
-        // 更新记录
-        const session = getSession(chatHistory, sessionId, true, sessionCount);
-        session.messages.push({ role: 'user', content: text });
-        session.messages.push({ role: 'assistant', content: result.output });
-        
-        // 如果是第一条，更新标题
-        if (session.messages.length <= 2) {
-            session.title = text.length > 5 ? `${text.substring(0, 5)}...` : text;
-        }
-
-        saveHistory(chatHistory);
+        const ret = await handleUserInput(text, sessionId, sessionCount);
+        result = ret.output ? ret.output : ret;
     } catch (error) {
         console.log(`chat:send in main.js 异常: ${error}`);
         result = `获取ai助手执行结果失败, error: ${error}`;

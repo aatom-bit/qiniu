@@ -1,6 +1,11 @@
 const { Conversation } = require("./conversation");
 const { AdvancedTerminal } = require("./AdvancedTerminal");
 
+// 代替默认终端输出，自动保存为log
+const log = require('electron-log');
+console.log = log.info;
+console.error = log.error;
+
 const taskCategoryJudgementPrompt = '你是一个linux助手，现在要判断用户的需求类型，如果是代码开发方面的需求返回"ass!code", 否则返回null, 不要返回任何其他内容，下面是用户指令。';
 
 const correctAssistantPrompt = '你是一个linux助手,你已经根据用户的需求生成对应的sh指令，已知命令结束得到返回，请检查命令结果，如果完成目标返回"ass!done";否则返回下一步命令，仅包含命令，下面是命令结果。';
@@ -164,7 +169,7 @@ class ConsoleAssistant {
     }
 
     async normalConversation(content) {
-        let ret = await this.taskCategoryJudgement.interact(content);
+        const ret = await this.normalAssistant.interact(content);
         return ret;
     }
 
@@ -195,5 +200,7 @@ module.exports = { ConsoleAssistant };
 // test_console.taskCompleteCallbackAddlistener(sampleCallback.bind(this));
 
 // // 反复调用下面的方法执行用户操作，第一个参数用来指定使用哪个窗口(可以随便填，相同窗口会继承记忆)
-// let ret = test_console.consoleAssignTask(0, '帮我安装vlc');
-// console.log(`ret: ${ ret }`);
+// // let ret = test_console.consoleAssignTask(0, '帮我安装vlc');
+// let ret = test_console.normalConversation('你好');
+
+// console.log(`ret: ${ ret.output }`);

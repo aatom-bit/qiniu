@@ -99,4 +99,8 @@ class Conversation {
     }
 }
 
+// const cvst = new Conversation({role: 'ai助手', memory: false});
+// let ret = cvst.interact('你好');
+// console.log(`ret: ${ret}`);
+
 module.exports = { Conversation };
