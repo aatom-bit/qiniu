@@ -120,8 +120,11 @@
         scrollToBottom();
     }
 
+    // TODO: 添加sessionId参数解析，使得支持其他窗口添加message
     // 4. 将单条消息添加到 UI
     function appendMessageUI(role, content) {
+        if (!content)
+            content = '';
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${role}`;
         
@@ -175,9 +178,11 @@
             sessionId: state.currentSessionIndex,
             sessionCount: state.history.length
         });
-        // 更新助手回复
-        state.history[state.currentSessionIndex].messages.push({ role: 'assistant', content: response });
-        appendMessageUI('assistant', response);
+
+        // 这里已经在监听中更新，无需再显示一遍
+        // // 更新助手回复
+        // state.history[state.currentSessionIndex].messages.push({ role: 'assistant', content: response });
+        // appendMessageUI('assistant', response);
 
         // 如果是首条消息，更新标题
         if (state.history[state.currentSessionIndex].messages.length === 1) {
@@ -259,7 +264,8 @@
     }
 
     // 响应ai返回
-    window.electronAPI.onAiResponse(({ role, content }) => {
+    window.electronAPI.onAiResponse(({ role, content, sessionId }) => {
+        console.log(`onAiResponse calling！role: ${role}, content: ${content}, sessionId: ${sessionId}`);
         // 调用之前写的添加消息 UI 的函数
         appendMessageUI(role, content);
         

@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendMessage: (msg) => ipcRenderer.invoke('chat:send', msg),
     getHistory: () => ipcRenderer.invoke('chat:getHistory'),
     runCommand: (cmd) => ipcRenderer.invoke('terminal:run', cmd),
-    onAiResponse: (callback) => ipcRenderer.on('chat:ai-response', callback),
+    onAiResponse: (callback) => ipcRenderer.on('chat:ai-response', (event, group) => callback(group)),
 });
 
 // // 如果需要控制窗口移动或关闭，也可以暴露：
