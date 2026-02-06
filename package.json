@@ -1,0 +1,30 @@
+{
+  "name": "float-full",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "dlaz",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^38.3.0",
+    "npm": "^8.19.4"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "^1.1.0",
+    "axios": "^1.12.2",
+    "crypto": "^1.0.1",
+    "crypto-js": "^4.2.0",
+    "electron-log": "^5.4.3",
+    "events": "^3.3.0",
+    "log4node": "^0.1.6",
+    "mic": "^2.1.2",
+    "node-pty": "^1.0.0",
+    "node-record-lpcm16": "^1.0.1",
+    "process": "^0.11.10",
+    "readline": "^1.3.0",
+    "ws": "^8.18.3"
+  }
+}
