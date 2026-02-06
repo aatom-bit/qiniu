@@ -91,8 +91,8 @@ appx/
 *.map
 
 # 包管理器锁文件（根据你使用的包管理器选择保留其中一个）
-# package-lock.json   # 如果你使用 npm
-# yarn.lock          # 如果你使用 Yarn
+package-lock.json   # 如果你使用 npm
+yarn.lock          # 如果你使用 Yarn
 
 # TypeScript
 *.tsbuildinfo
