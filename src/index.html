@@ -264,12 +264,22 @@
     }
 
     // 响应ai返回
-    window.electronAPI.onAiResponse(({ role, content, sessionId }) => {
+    window.electronAPI.onAiResponse(({ role, content, sessionId } = {}) => {
         console.log(`onAiResponse calling！role: ${role}, content: ${content}, sessionId: ${sessionId}`);
-        // 调用之前写的添加消息 UI 的函数
-        appendMessageUI(role, content);
         
-        // 如果标题可能变了，刷新侧边栏标题
+        // 添加历史记录
+        if (state.history[sessionId]) {
+            state.history[sessionId].messages.push({ role: role, content: content });
+        }
+
+        // 只在当前窗口渲染对话 UI
+        if (sessionId === state.currentSessionIndex) {
+            // 调用添加消息 UI 函数
+            appendMessageUI(role, content);
+            scrollToBottom(); 
+        }
+        
+        // 如果标题变化，刷新侧边栏标题
         renderHistory();
     });
 
