@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sessionSwitch: (sessionId) => ipcRenderer.invoke('chat:session-switch', sessionId),
     sendMessage: (msg) => ipcRenderer.invoke('chat:send', msg),
     getHistory: () => ipcRenderer.invoke('chat:getHistory'),
-    runCommand: (cmd) => ipcRenderer.invoke('terminal:run', cmd),
+    runCommand: (cmd) => ipcRenderer.invoke('terminal:run', cmd, sessionId),
     onAiResponse: (callback) => ipcRenderer.on('chat:ai-response', (event, group) => callback(group)),
 });
 
