@@ -57,8 +57,62 @@ class ConsoleAssistant {
         }
     }
 
+    async _fetchRealCommand(consoleInfo, task, taskCategory, correcting = false) {
+        let ret = null;
+        if (taskCategory === 'code') {
+            ret = await consoleInfo.codeAssistant.interact(
+                correcting ? `命令输出: ${task}` : task, 
+                correcting ? correctAssistantPrompt : null
+            );
+        } else {
+            ret = await consoleInfo.shellAssistant.interact(
+                correcting ? `命令输出: ${task}` : task, 
+                correcting ? correctAssistantPrompt : null
+            );
+        }
+        return ret;
+    }
+
     /**
-     * [不安全] 直接识别用户需求并更新代码
+     * 根据用户需求生成shell命令
+     * @param {number} consoleInfo 对话窗口元数据
+     * @param {string} task 用户以自然语言描述的任务需求
+     * @param {string} taskCategory 任务类型(shell/code 协助), 为 null 时自动选择
+     * @param {boolean} correcting 是否用于修正最开始的需求
+     * */ 
+    async getConsoleTask(consoleInfo, task, taskCategory = null, correcting = false) {
+        // 处理任务和任务类别
+        if (task && !correcting) {
+            // 只有在非纠正模式下才更新任务
+            consoleInfo.lastTask = task;
+        } 
+        // else if (correcting && consoleInfo.lastTask) {
+            // 在纠正模式下，使用上次的任务，但当前 task 是命令输出
+            // 这里不需要更新 lastTask
+        // }
+        else {
+            const errorLog = `error: consoleAssignTask fail: 没有可用的任务`;
+            console.log(errorLog);
+            return errorLog;
+        }
+
+        if (!taskCategory) {
+            taskCategory = await this.getTaskCategory(consoleInfo.lastTask);
+        }
+        consoleInfo.taskCategory = taskCategory;
+
+        let command = await this._fetchRealCommand(consoleInfo, task, taskCategory, correcting);
+        if (command.startsWith('error:')) {
+            const errorLog = `error: 获取命令错误，得到: ${command.length > 6 ? command.substring(6) : command}`;
+            console.log(errorLog);
+            return errorLog;
+        }
+        console.log(`将用户的需求转换为sh命令: ${command}`);
+        return command;
+    }
+
+    /**
+     * [不安全] 直接识别用户需求并执行代码
      * @param {number} consoleNum 对话窗口编号
      * @param {string} task 用户以自然语言描述的任务需求
      * @param {string} taskCategory 任务类型(shell/code 协助), 为 null 时自动选择
@@ -77,47 +131,21 @@ class ConsoleAssistant {
             consoleInfo = this.consoles.get(consoleNum);
         }
 
-        // 处理任务和任务类别
-        if (task && !correcting) {
-            // 只有在非纠正模式下才更新任务
-            consoleInfo.lastTask = task;
-        } else if (correcting && consoleInfo.lastTask) {
-            // 在纠正模式下，使用上次的任务，但当前 task 是命令输出
-            // 这里不需要更新 lastTask
-        } else {
-            console.log(`consoleAssignTask fail: 没有可用的任务`);
-            return false;
-        }
+        // 真正获取命令的部分
+        const command = await this.getConsoleTask(consoleInfo, task, taskCategory);
 
-        if (!taskCategory) {
-            taskCategory = await this.getTaskCategory(consoleInfo.lastTask);
-        }
-        consoleInfo.taskCategory = taskCategory;
+        if (command) {
+            // 识别错误信息并直接交给上层
+            if (command.startsWith('error:')) {
+                return command;
+            }
+            // 等待用户同意执行命令
+            // TODO: 此处等待获取用户同意
 
-        let command = await this.fetchRealCommand(consoleInfo, task, taskCategory, correcting);
-        if (command.startsWith('error:')) {
-            console.log(`获取命令错误，得到: ${command}`);
-            return command;
-        } else {
-            console.log(`将用户的需求转换为sh命令: ${command}`);
+            // 真正执行命令
+            return await this.terminal.executeCommand(command, consoleInfo.processId);
         }
-        return await this.terminal.executeCommand(command, consoleInfo.processId);
-    }
-
-    async fetchRealCommand(consoleInfo, task, taskCategory, correcting = false) {
-        let ret = null;
-        if (taskCategory === 'code') {
-            ret = await consoleInfo.codeAssistant.interact(
-                correcting ? `命令输出: ${task}` : task, 
-                correcting ? correctAssistantPrompt : null
-            );
-        } else {
-            ret = await consoleInfo.shellAssistant.interact(
-                correcting ? `命令输出: ${task}` : task, 
-                correcting ? correctAssistantPrompt : null
-            );
-        }
-        return ret;
+        return 'error: 获取命令失败';
     }
 
     async onCommandDone(reflectionId, result) {
@@ -165,7 +193,12 @@ class ConsoleAssistant {
     }
 
     async getPassword() {
-        // TODO: 在这里实现弹出一个密码输入窗口，让用户输入密码
+        // TODO: 在这里实现向外部传递等待密码输入的msg,弹出一个密码输入窗口，让用户输入密码
+        return
+    }
+
+    async getUserPermission() {
+        // TODO: 此处实现向外部传递等待用户同意的msg
     }
 
     async normalConversation(content) {
@@ -173,7 +206,12 @@ class ConsoleAssistant {
         return ret;
     }
 
-    async directRun(command) {
+    async directRun(command, consoleNum) {
+        let consoleInfo = this.consoles.get(consoleNum);
+        if (!consoleInfo) {
+            this.createNewConsole(consoleNum);
+            consoleInfo = this.consoles.get(consoleNum);
+        }
         return await this.terminal.executeCommand(command, consoleInfo.processId);
     }
 

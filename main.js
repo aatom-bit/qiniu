@@ -31,8 +31,10 @@ const sessionInfo = {
 
 function createMainWindow() {
     mainWin = new BrowserWindow({
-        width: 400,
-        height: 300,
+        width: 600,
+        height: 450,
+        minWidth: 400,    // 强制最小宽度，确保侧边栏+对话区有基本空间
+        minHeight: 300,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true
@@ -85,35 +87,58 @@ function getAiDecision(content) {
 
     const input = content.trim().toLowerCase();
 
-    // 1. 明确包含编程语言或脚本术语的正则
+    // 1. 明确的代码/脚本语言
     const explicitTechRegex = /\b(python|javascript|java|golang|c\+\+|bash|shell|sh|powershell|sql|html|css|json|yaml|xml|markdown)\b/i;
 
-    // 2. 常见的 Linux 操作动词 (安装、卸载、启动、查看等)
-    const actionRegex = /(安装|卸载|启动|停止|重启|查看|检查|创建|删除|修改|设置|运行|执行|查找|搜索|install|uninstall|start|stop|restart|check|show|list|create|remove|delete|edit|set|run|exec|find|grep|search)/i;
+    // 2. 高权重指令动词（这些词出现，基本就是为了执行命令）
+    const highWeightActionRegex = /(安装|卸载|更新|升级|install|uninstall|upgrade|update|apt|yum|pacman|pip|npm|npm|brew)/i;
 
-    // 3. 典型的 Linux 系统实体 (端口、进程、文件、目录、权限等)
-    const systemEntityRegex = /(端口|进程|服务|目录|文件夹|文件|权限|网络|内存|cpu|磁盘|日志|软件|包|依赖|port|process|service|dir|directory|folder|file|permission|chmod|chown|network|ip|memory|disk|log|software|package|dep)/i;
+    // 3. 普通操作动词
+    const actionRegex = /(启动|停止|重启|查看|检查|创建|删除|修改|设置|运行|执行|查找|搜索|start|stop|restart|check|show|list|create|remove|delete|edit|set|run|exec|find|grep|search)/i;
 
-    // 4. 特定的 Linux 命令行工具名称
-    const toolRegex = /\b(sudo|apt|yum|dnf|pacman|systemctl|lsof|netstat|ps|top|htop|df|du|mkdir|cd|pwd|cat|ssh|docker|git|npm|pip|node)\b/i;
+    // 4. 系统实体词库
+    const systemEntityRegex = /(端口|进程|服务|目录|文件夹|文件|权限|网络|内存|cpu|磁盘|日志|软件|包|依赖|配置|port|process|service|dir|directory|folder|file|permission|network|ip|memory|disk|log|software|package|dep|config)/i;
 
-    // 决策逻辑：
-    // A. 如果包含明确的代码/脚本术语 -> command
-    // B. 如果同时包含 [操作动词] 和 [系统实体] -> command (例如: "查看进程")
-    // C. 如果直接提到了某个 Linux 命令工具 -> command (例如: "用 lsof 查一下")
-    // D. 如果包含 "怎么写"、"如何实现"、"脚本"、"指令" 等引导词 -> command
-    const intentRegex = /(怎么|如何|编写|脚本|代码|指令|命令|代码|how to|command|script)/i;
+    // 5. 命令行工具
+    const toolRegex = /\b(sudo|systemctl|lsof|netstat|ps|top|htop|df|du|mkdir|cd|pwd|cat|ssh|docker|git|node|python|sh|bash)\b/i;
 
-    if (
-        explicitTechRegex.test(input) || 
-        toolRegex.test(input) || 
-        (actionRegex.test(input) && systemEntityRegex.test(input)) ||
-        (intentRegex.test(input) && (systemEntityRegex.test(input) || actionRegex.test(input)))
-    ) {
+    // 6. 引导意图词
+    const intentRegex = /(怎么|如何|编写|脚本|代码|指令|命令|how to|command|script)/i;
+
+    // --- 决策逻辑 ---
+
+    // A. 包含高权重动词 (如: 安装vlc)
+    if (highWeightActionRegex.test(input)) {
         return 'command';
     }
 
-    // 5. 默认判定为一般对话
+    // B. 包含明确的技术/语言名称
+    if (explicitTechRegex.test(input)) {
+        return 'command';
+    }
+
+    // C. 直接提到系统工具 (如: 用lsof查一下)
+    if (toolRegex.test(input)) {
+        return 'command';
+    }
+
+    // D. 动作 + 实体组合 (如: 查看进程)
+    if (actionRegex.test(input) && systemEntityRegex.test(input)) {
+        return 'command';
+    }
+
+    // E. 意图词 + (动作或实体) (如: 怎么查看端口)
+    if (intentRegex.test(input) && (systemEntityRegex.test(input) || actionRegex.test(input))) {
+        return 'command';
+    }
+    
+    // F. 特殊匹配：动作词 + 英文/数字名（处理不在词库里的软件包，如：运行 nginx）
+    // 匹配中文动词后面跟着英文单词的模式
+    const actionAndUnknownEntity = new RegExp(`${actionRegex.source}[a-z0-9\\s]+`, 'i');
+    if (actionAndUnknownEntity.test(input)) {
+        return 'command';
+    }
+
     return 'chat';
 }
 
@@ -235,10 +260,10 @@ ipcMain.handle('chat:send', async (event, { text, sessionId, sessionCount }) => 
 ipcMain.handle('chat:getHistory', () => chatHistory);
 
 // 执行脚本
-ipcMain.handle('terminal:run', async (event, command) => {
+ipcMain.handle('terminal:run', async (event, command, sessionId) => {
     console.log("正在执行脚本:", command);
     // 使用你已有的 AdvancedTerminal 执行命令
-    const result = await consoleAssistant.directRun(command);
+    const result = await consoleAssistant.directRun(command, sessionId);
 
     return result;
 });

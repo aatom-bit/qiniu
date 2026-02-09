@@ -1,145 +1,350 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <title>Linux AI 助手</title>
     <style>
-        /* 样式保持与之前建议的暗黑风格一致 */
-        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; background: #1e1e1e; color: #ccc; }
-        .app-container { display: flex; height: 100vh; }
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Segoe UI', sans-serif;
+            background: #1e1e1e;
+            color: #ccc;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
 
         /* 侧边栏 */
-        .sidebar { width: 220px; background: #252526; border-right: 1px solid #333; display: flex; flex-direction: column; }
-        .new-chat-btn { padding: 15px; margin: 10px; background: #333; text-align: center; border-radius: 4px; cursor: pointer; transition: 0.3s; }
-        .new-chat-btn:hover { background: #444; }
-        .history-list { flex: 1; overflow-y: auto; }
-        .history-item { padding: 12px 15px; font-size: 13px; border-bottom: 1px solid #2d2d2d; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .history-item.active { background: #37373d; border-left: 3px solid #007acc; }
+        .sidebar {
+            flex: 0 0 auto;
+            width: 240px;
+            min-width: 220px;
+            width: 220px;
+            background: #252526;
+            border-right: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .new-chat-btn {
+            padding: 15px;
+            margin: 10px;
+            background: #333;
+            text-align: center;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .new-chat-btn:hover {
+            background: #444;
+        }
+
+        .history-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 12px 15px;
+            font-size: 13px;
+            border-bottom: 1px solid #2d2d2d;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .history-item.active {
+            background: #37373d;
+            border-left: 3px solid #007acc;
+        }
 
         /* 对话区 */
-        .main-chat { flex: 1; display: flex; flex-direction: column; }
-        #messages-container { flex: 1; overflow-y: auto; padding: 20px; }
-        
-        .message { display: flex; margin-bottom: 20px; animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        
-        .message.user { flex-direction: row-reverse; }
-        .avatar { font-size: 20px; margin: 0 12px; }
-        .content { max-width: 80%; }
-        .text-bubble { background: #333; padding: 10px 14px; border-radius: 8px; line-height: 1.5; word-wrap: break-word; }
-        .user .text-bubble { background: #007acc; color: white; }
+        .main-chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 300px;
+        }
+
+        #messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 20px;
+            /* padding: 20px; */
+        }
+
+        .message {
+            display: flex;
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+            /* max-width: 90%; */
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            font-size: 20px;
+            margin: 0 12px;
+        }
+
+        .content {
+            max-width: 80%;
+            min-width: 50px;
+        }
+
+        .text-bubble {
+            background: #333;
+            padding: 10px 14px;
+            border-radius: 8px;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+
+        .user .text-bubble {
+            background: #007acc;
+            color: white;
+        }
 
         /* 代码块样式 */
-        .code-block { background: #000; border-radius: 6px; margin-top: 8px; border: 1px solid #444; }
-        .code-header { background: #333; padding: 5px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
-        .code-header button { background: #28a745; border: none; color: white; padding: 3px 8px; border-radius: 3px; cursor: pointer; }
-        pre { padding: 12px; margin: 0; font-family: 'Fira Code', 'Courier New', monospace; overflow-x: auto; font-size: 13px; color: #d7ba7d; }
+        .code-block {
+            width: 100%;
+            background: #000;
+            border-radius: 6px;
+            margin-top: 8px;
+            border: 1px solid #444;
+        }
+
+        .code-header {
+            background: #333;
+            padding: 5px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+        }
+
+        .code-header button {
+            background: #28a745;
+            border: none;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        pre {
+            padding: 12px;
+            margin: 0;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            overflow-x: auto;
+            font-size: 13px;
+            color: #d7ba7d;
+        }
+
+        .code-block pre {
+            padding: 12px;
+            margin: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            overflow-x: auto;
+            /* 关键：代码过长时内部横向滚动 */
+            white-space: pre;
+            /* 保持代码原样，不换行以方便阅读 */
+            color: #d7ba7d;
+        }
+
+        pre::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        pre::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 4px;
+        }
+
+        pre::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
 
         /* 输入区 */
-        .input-area { padding: 20px; border-top: 1px solid #333; display: flex; gap: 10px; }
-        #user-input { flex: 1; height: 50px; background: #2d2d2d; border: 1px solid #444; color: white; padding: 10px; border-radius: 4px; resize: none; outline: none; }
-        #send-btn { width: 80px; background: #007acc; border: none; color: white; border-radius: 4px; cursor: pointer; }
-        #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        /* ... 保持原有样式，添加 action-btn 样式 ... */
-        .action-btn { 
-            padding: 12px; 
-            margin: 5px 10px; 
-            background: #2d2d2d; 
-            color: #aaa;
-            text-align: center; 
-            border: 1px solid #444;
-            border-radius: 4px; 
-            cursor: pointer; 
-            font-size: 13px;
-            transition: 0.2s; 
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid #333;
+            justify-content: center;
+            /* 输入框居中 */
+            display: flex;
+            gap: 10px;
         }
-        .action-btn:hover { background: #3d3d3d; color: #fff; }
-        .action-btn.active { border-color: #ff9a6b; color: #ff9a6b; }
+
+        .input-wrapper {
+            width: 100%;
+            max-width: 80%;
+            /* 与消息最大宽度对齐 */
+            display: flex;
+            gap: 12px;
+        }
+
+        #user-input {
+            flex: 1;
+            height: 50px;
+            background: #2d2d2d;
+            border: 1px solid #444;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            resize: none;
+            outline: none;
+            resize: vertical;
+            /* 允许用户垂直拉伸输入框 */
+        }
+
+        #send-btn {
+            width: 80px;
+            background: #007acc;
+            border: none;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .action-btn {
+            padding: 12px;
+            margin: 5px 10px;
+            background: #2d2d2d;
+            color: #aaa;
+            text-align: center;
+            border: 1px solid #444;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: 0.2s;
+        }
+
+        .action-btn:hover {
+            background: #3d3d3d;
+            color: #fff;
+        }
+
+        .action-btn.active {
+            border-color: #ff9a6b;
+            color: #ff9a6b;
+        }
     </style>
 </head>
+
 <body>
 
-<div class="app-container">
-    <div class="sidebar">
-        <div class="new-chat-btn" id="new-chat-btn">+ 新对话</div>
-        <!-- 显示/关闭悬浮球按钮 -->
-        <div class="action-btn" id="toggle-ball-btn">显示悬浮球</div>
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="new-chat-btn" id="new-chat-btn">+ 新对话</div>
+            <!-- 显示/关闭悬浮球按钮 -->
+            <div class="action-btn" id="toggle-ball-btn">显示悬浮球</div>
 
-        <div class="history-list" id="history-list"></div>
-    </div>
-    <div class="main-chat">
-        <div id="messages-container"></div>
-        <div class="input-area">
-            <textarea id="user-input" placeholder="输入指令或提问..."></textarea>
-            <button id="send-btn">发送</button>
+            <div class="history-list" id="history-list"></div>
+        </div>
+        <div class="main-chat">
+            <div id="messages-container"></div>
+            <div class="input-area">
+                <div class="input-wrapper">
+                    <textarea id="user-input" placeholder="输入指令或提问..."></textarea>
+                    <button id="send-btn">发送</button>
+                </div>
+            </div>
         </div>
     </div>
-</div>
 
-<script>
-    // 模拟 Vue 的响应式数据
-    let state = {
-        history: [],
-        currentSessionIndex: 0,
-        loading: false
-    };
+    <script>
+        // 模拟 Vue 的响应式数据
+        let state = {
+            history: [],
+            currentSessionIndex: 0,
+            loading: false
+        };
 
-    const msgContainer = document.getElementById('messages-container');
-    const historyListEl = document.getElementById('history-list');
-    const userInput = document.getElementById('user-input');
-    const sendBtn = document.getElementById('send-btn');
+        const msgContainer = document.getElementById('messages-container');
+        const historyListEl = document.getElementById('history-list');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
 
-    // 1. 初始化
-    async function init() {
-        state.history = await window.electronAPI.getHistory();
-        if (state.history.length === 0) {
-            createNewChat();
+        // 1. 初始化
+        async function init() {
+            state.history = await window.electronAPI.getHistory();
+            if (state.history.length === 0) {
+                createNewChat();
+            }
+            renderHistory();
+            renderMessages();
         }
-        renderHistory();
-        renderMessages();
-    }
 
-    // 2. 渲染历史记录侧边栏
-    function renderHistory() {
-        historyListEl.innerHTML = '';
-        state.history.forEach((session, index) => {
-            const div = document.createElement('div');
-            div.className = `history-item ${state.currentSessionIndex === index ? 'active' : ''}`;
-            div.innerText = session.title || '新会话 ' + (index + 1);
-            div.onclick = () => switchSession(index);
-            historyListEl.appendChild(div);
-        });
-    }
+        // 2. 渲染历史记录侧边栏
+        function renderHistory() {
+            historyListEl.innerHTML = '';
+            state.history.forEach((session, index) => {
+                const div = document.createElement('div');
+                div.className = `history-item ${state.currentSessionIndex === index ? 'active' : ''}`;
+                div.innerText = session.title || '新会话 ' + (index + 1);
+                div.onclick = () => switchSession(index);
+                historyListEl.appendChild(div);
+            });
+        }
 
-    // 3. 渲染当前会话的消息
-    function renderMessages() {
-        msgContainer.innerHTML = '';
-        const messages = state.history[state.currentSessionIndex]?.messages || [];
-        messages.forEach(msg => appendMessageUI(msg.role, msg.content));
-        scrollToBottom();
-    }
+        // 3. 渲染当前会话的消息
+        function renderMessages() {
+            msgContainer.innerHTML = '';
+            const messages = state.history[state.currentSessionIndex]?.messages || [];
+            messages.forEach(msg => appendMessageUI(msg.role, msg.content));
+            scrollToBottom();
+        }
 
-    // TODO: 添加sessionId参数解析，使得支持其他窗口添加message
-    // 4. 将单条消息添加到 UI
-    function appendMessageUI(role, content) {
-        if (!content)
-            content = '';
-        const msgDiv = document.createElement('div');
-        msgDiv.className = `message ${role}`;
-        
-        const isCode = content.includes('```');
-        const avatar = role === 'user' ? '👤' : '🤖';
+        // 4. 将单条消息添加到 UI
+        function appendMessageUI(role, content) {
+            if (!content)
+                content = '';
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}`;
 
-        let innerHTML = `
+            const isCode = content.includes('```');
+            const avatar = role === 'user' ? '👤' : '🤖';
+
+            let innerHTML = `
             <div class="avatar">${avatar}</div>
             <div class="content">
         `;
 
-        if (isCode) {
-            // 提取代码逻辑 (正则表达式)
-            const code = content.replace(/```(sh|bash|shell)?/gi, '').replace(/```/g, '').trim();
-            innerHTML += `
+            if (isCode) {
+                // 提取代码逻辑 (正则表达式)
+                const code = content.replace(/```(sh|bash|shell)?/gi, '').replace(/```/g, '').trim();
+                innerHTML += `
                 <div class="code-block">
                     <div class="code-header">
                         <span>Shell Script</span>
@@ -148,142 +353,142 @@
                     <pre><code>${code}</code></pre>
                 </div>
             `;
-        } else {
-            innerHTML += `<div class="text-bubble">${content}</div>`;
+            } else {
+                innerHTML += `<div class="text-bubble">${content}</div>`;
+            }
+
+            innerHTML += `</div>`;
+            msgDiv.innerHTML = innerHTML;
+            msgContainer.appendChild(msgDiv);
+            scrollToBottom();
         }
 
-        innerHTML += `</div>`;
-        msgDiv.innerHTML = innerHTML;
-        msgContainer.appendChild(msgDiv);
-        scrollToBottom();
-    }
+        // 5. 交互功能
+        async function send() {
+            const text = userInput.value.trim();
+            if (!text || state.loading) return;
 
-    // 5. 交互功能
-    async function send() {
-        const text = userInput.value.trim();
-        if (!text || state.loading) return;
+            state.loading = true;
+            sendBtn.disabled = true;
 
-        state.loading = true;
-        sendBtn.disabled = true;
-        
-        // 更新本地状态
-        state.history[state.currentSessionIndex].messages.push({ role: 'user', content: text });
-        appendMessageUI('user', text);
-        userInput.value = '';
+            // 更新本地状态
+            state.history[state.currentSessionIndex].messages.push({ role: 'user', content: text });
+            appendMessageUI('user', text);
+            userInput.value = '';
 
-        // 调用识别用户需求并自动执行shell，返回执行情况 
-        // TODO:测试完成时取消以下注释
-        const response = await window.electronAPI.sendMessage({
-            text: text,
-            sessionId: state.currentSessionIndex,
-            sessionCount: state.history.length
-        });
+            // 调用识别用户需求并自动执行shell，返回执行情况 
+            const response = await window.electronAPI.sendMessage({
+                text: text,
+                sessionId: state.currentSessionIndex,
+                sessionCount: state.history.length
+            });
 
-        // 这里已经在监听中更新，无需再显示一遍
-        // // 更新助手回复
-        // state.history[state.currentSessionIndex].messages.push({ role: 'assistant', content: response });
-        // appendMessageUI('assistant', response);
+            // 这里已经在监听中更新，无需再显示一遍
+            // // 更新助手回复
+            // state.history[state.currentSessionIndex].messages.push({ role: 'assistant', content: response });
+            // appendMessageUI('assistant', response);
 
-        // 如果是首条消息，更新标题
-        if (state.history[state.currentSessionIndex].messages.length === 1) {
-            state.history[state.currentSessionIndex].title = text.length > 5 ? `${text.substring(0, 5)}...` : text;
-            renderHistory();
+            // 如果是首条消息，更新标题
+            if (state.history[state.currentSessionIndex].messages.length === 1) {
+                state.history[state.currentSessionIndex].title = text.length > 5 ? `${text.substring(0, 5)}...` : text;
+                renderHistory();
+            }
+
+            state.loading = false;
+            sendBtn.disabled = false;
         }
 
-        state.loading = false;
-        sendBtn.disabled = false;
-    }
-
-    function createNewChat() {
-        state.history.unshift({ title: '新会话', messages: [] });
-        state.currentSessionIndex = 0;
-        renderHistory();
-        renderMessages();
-    }
-
-    function switchSession(index) {
-        if (index < state.history.length && index >= 0) {
-            state.currentSessionIndex = index;
+        function createNewChat() {
+            state.history.unshift({ title: '新会话', messages: [] });
+            state.currentSessionIndex = 0;
             renderHistory();
             renderMessages();
-
-            // 让后端更新sessionId
-            window.electronAPI.sessionSwitch(index);
-        } else {
-            console.log(`index: ${index}, out of range!`);
-        }
-    }
-
-    window.executeScript = async (code) => {
-        if (confirm("确认执行此脚本？\n\n" + code)) {
-            await window.electronAPI.runCommand(code);
-        }
-    };
-
-    function scrollToBottom() {
-        msgContainer.scrollTop = msgContainer.scrollHeight;
-    }
-
-    // 事件监听
-    document.getElementById('new-chat-btn').onclick = createNewChat;
-    sendBtn.onclick = send;
-    userInput.onkeyup = (e) => { if (e.key === 'Enter') send(); };
-
-    // // 监听来自语音识别的结果并填入输入框
-    // window.electronAPI.onUpdateStatus((event, data) => {
-    //     if (data.role === 'user') {
-    //         userInput.value = data.content;
-    //         send(); // 自动发送语音识别的内容
-    //     }
-    // });
-
-     const toggleBallBtn = document.getElementById('toggle-ball-btn');
-    let isBallShowing = false;
-
-    // 点击切换悬浮球显示
-    toggleBallBtn.onclick = () => {
-        isBallShowing = !isBallShowing;
-        window.electronAPI.toggleBall(isBallShowing);
-        updateBallBtnUI(isBallShowing);
-    };
-
-    // 监听来自主进程的悬浮球状态更新 (例如悬浮球被自己关闭了)
-    window.electronAPI.onBallStatus((exists) => {
-        isBallShowing = exists;
-        updateBallBtnUI(exists);
-    });
-
-    function updateBallBtnUI(exists) {
-        if (exists) {
-            toggleBallBtn.innerText = '关闭悬浮球';
-            toggleBallBtn.classList.add('active');
-        } else {
-            toggleBallBtn.innerText = '显示悬浮球';
-            toggleBallBtn.classList.remove('active');
-        }
-    }
-
-    // 响应ai返回
-    window.electronAPI.onAiResponse(({ role, content, sessionId } = {}) => {
-        console.log(`onAiResponse calling！role: ${role}, content: ${content}, sessionId: ${sessionId}`);
-        
-        // 添加历史记录
-        if (state.history[sessionId]) {
-            state.history[sessionId].messages.push({ role: role, content: content });
         }
 
-        // 只在当前窗口渲染对话 UI
-        if (sessionId === state.currentSessionIndex) {
-            // 调用添加消息 UI 函数
-            appendMessageUI(role, content);
-            scrollToBottom(); 
-        }
-        
-        // 如果标题变化，刷新侧边栏标题
-        renderHistory();
-    });
+        function switchSession(index) {
+            if (index < state.history.length && index >= 0) {
+                state.currentSessionIndex = index;
+                renderHistory();
+                renderMessages();
 
-    init();
-</script>
+                // 让后端更新sessionId
+                window.electronAPI.sessionSwitch(index);
+            } else {
+                console.log(`index: ${index}, out of range!`);
+            }
+        }
+
+        window.executeScript = async (code) => {
+            if (confirm("确认执行此脚本？\n\n" + code)) {
+                await window.electronAPI.runCommand(code, state.currentSessionIndex);
+            }
+        };
+
+        function scrollToBottom() {
+            msgContainer.scrollTop = msgContainer.scrollHeight;
+        }
+
+        // 事件监听
+        document.getElementById('new-chat-btn').onclick = createNewChat;
+        sendBtn.onclick = send;
+        userInput.onkeyup = (e) => { if (e.key === 'Enter') send(); };
+
+        // // 监听来自语音识别的结果并填入输入框
+        // window.electronAPI.onUpdateStatus((event, data) => {
+        //     if (data.role === 'user') {
+        //         userInput.value = data.content;
+        //         send(); // 自动发送语音识别的内容
+        //     }
+        // });
+
+        const toggleBallBtn = document.getElementById('toggle-ball-btn');
+        let isBallShowing = false;
+
+        // 点击切换悬浮球显示
+        toggleBallBtn.onclick = () => {
+            isBallShowing = !isBallShowing;
+            window.electronAPI.toggleBall(isBallShowing);
+            updateBallBtnUI(isBallShowing);
+        };
+
+        // 监听来自主进程的悬浮球状态更新 (例如悬浮球被自己关闭了)
+        window.electronAPI.onBallStatus((exists) => {
+            isBallShowing = exists;
+            updateBallBtnUI(exists);
+        });
+
+        function updateBallBtnUI(exists) {
+            if (exists) {
+                toggleBallBtn.innerText = '关闭悬浮球';
+                toggleBallBtn.classList.add('active');
+            } else {
+                toggleBallBtn.innerText = '显示悬浮球';
+                toggleBallBtn.classList.remove('active');
+            }
+        }
+
+        // 响应ai返回
+        window.electronAPI.onAiResponse(({ role, content, sessionId } = {}) => {
+            console.log(`onAiResponse calling！role: ${role}, content: ${content}, sessionId: ${sessionId}`);
+
+            // 添加历史记录
+            if (state.history[sessionId]) {
+                state.history[sessionId].messages.push({ role: role, content: content });
+            }
+
+            // 只在当前窗口渲染对话 UI
+            if (sessionId === state.currentSessionIndex) {
+                // 调用添加消息 UI 函数
+                appendMessageUI(role, content);
+                scrollToBottom();
+            }
+
+            // 如果标题变化，刷新侧边栏标题
+            renderHistory();
+        });
+
+        init();
+    </script>
 </body>
+
 </html>
