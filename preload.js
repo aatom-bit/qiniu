@@ -15,15 +15,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sessionSwitch: (sessionId) => ipcRenderer.invoke('chat:session-switch', sessionId),
     sendMessage: (msg) => ipcRenderer.invoke('chat:send', msg),
     getHistory: () => ipcRenderer.invoke('chat:getHistory'),
-    runCommand: (cmd) => ipcRenderer.invoke('terminal:run', cmd, sessionId),
+    runCommand: (cmd, sessionId) => ipcRenderer.invoke('terminal:run', cmd, sessionId),
     onAiResponse: (callback) => ipcRenderer.on('chat:ai-response', (event, group) => callback(group)),
+    // 监听主进程的权限请求
+    onAskPermission: (callback) => ipcRenderer.on('ask-for-permission', (_event, value) => callback(value)),
+    // 发送回复给主进程
+    sendPermissionResponse: (response) => ipcRenderer.send('permission-response', response),
+    
+    // // 如果需要控制窗口移动或关闭，也可以暴露：
+    //     moveWindow: (win, dx, dy) => {
+    //         const [x, y] = win.getBounds();
+    //         win.setBounds({x: x + dx, y: y + dy, width: win.getBounds().width, height: win.getBounds().height});
+    //     },
+    //     closeWindow: (win) => win.close()
 });
-
-// // 如果需要控制窗口移动或关闭，也可以暴露：
-// contextBridge.exposeInMainWorld('electronWindow', {
-//     moveWindow: (win, dx, dy) => {
-//         const [x, y] = win.getBounds();
-//         win.setBounds({x: x + dx, y: y + dy, width: win.getBounds().width, height: win.getBounds().height});
-//     },
-//     closeWindow: (win) => win.close()
-// });

@@ -487,6 +487,281 @@
             renderHistory();
         });
 
+        window.electronAPI.onAskPermission(async (data) => {
+            const { requestId, type, message, command } = data;
+            
+            console.log(`收到权限请求: ${type}, ID: ${requestId}`);
+
+            let result;
+            
+            if (type === 'sudo-password') {
+                // 显示密码输入对话框（传递 command 以显示要执行的命令）
+                result = await showSudoPasswordDialog(message, command);
+            } else if (type === 'run-confirmation') {
+                // 显示命令确认对话框
+                result = await showRunConfirmationDialog(message, command);
+            } else {
+                // 其他类型的权限请求
+                result = await showMyCustomDialog(message || `是否允许访问 ${type}?`);
+            }
+
+            // 将结果发回主进程，必须带上 requestId
+            window.electronAPI.sendPermissionResponse({
+                requestId: requestId,
+                result: result // 密码字符串或 boolean
+            });
+        });
+
+        async function showRunConfirmationDialog(message, command) {
+            return new Promise((resolve) => {
+                const backdrop = document.createElement('div');
+                backdrop.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: rgba(0, 0, 0, 0.5);
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    z-index: 9999;
+                `;
+
+                const dialog = document.createElement('div');
+                dialog.style.cssText = `
+                    background: #2d2d2d;
+                    border: 1px solid #444;
+                    border-radius: 8px;
+                    padding: 24px;
+                    width: 500px;
+                    max-height: 70vh;
+                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+                    color: #ccc;
+                    font-family: 'Segoe UI', sans-serif;
+                    overflow-y: auto;
+                `;
+
+                dialog.innerHTML = `
+                    <div>
+                        <h2 style="margin: 0 0 16px 0; color: #fff; font-size: 18px;">⚡ 命令确认</h2>
+                        <p style="margin: 0 0 12px 0; color: #aaa; font-size: 13px;">${message}</p>
+                        
+                        <div style="background: #1e1e1e; border: 1px solid #444; border-radius: 4px; padding: 12px; margin-bottom: 16px;">
+                            <div style="font-size: 11px; color: #888; margin-bottom: 8px;">将执行的命令:</div>
+                            <code style="
+                                display: block;
+                                color: #d7ba7d;
+                                font-family: 'Fira Code', monospace;
+                                font-size: 12px;
+                                word-break: break-all;
+                                white-space: pre-wrap;
+                                overflow-x: auto;
+                            ">${command}</code>
+                        </div>
+                        
+                        <div style="background: #3a2a2a; border-left: 3px solid #f39c12; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                            <p style="margin: 0; color: #ffcc99; font-size: 13px;">⚠️ 请确保你信任此命令的来源</p>
+                            <p style="margin: 5px 0 0 0; color: #ccc; font-size: 11px;">执行未知命令可能导致系统损坏</p>
+                        </div>
+                        
+                        <div style="display: flex; gap: 12px;">
+                            <button id="runConfirmBtn" style="
+                                flex: 1;
+                                padding: 10px 16px;
+                                background: #27ae60;
+                                color: white;
+                                border: none;
+                                border-radius: 4px;
+                                cursor: pointer;
+                                font-size: 14px;
+                                font-weight: 500;
+                            ">执行</button>
+                            <button id="runCancelBtn" style="
+                                flex: 1;
+                                padding: 10px 16px;
+                                background: #444;
+                                color: #ccc;
+                                border: none;
+                                border-radius: 4px;
+                                cursor: pointer;
+                                font-size: 14px;
+                            ">取消</button>
+                        </div>
+                    </div>
+                `;
+
+                backdrop.appendChild(dialog);
+                document.body.appendChild(backdrop);
+
+                const confirmBtn = dialog.querySelector('#runConfirmBtn');
+                const cancelBtn = dialog.querySelector('#runCancelBtn');
+
+                const cleanup = () => {
+                    backdrop.remove();
+                };
+
+                confirmBtn.onclick = () => {
+                    cleanup();
+                    resolve(true);
+                };
+
+                cancelBtn.onclick = () => {
+                    cleanup();
+                    resolve(false);
+                };
+
+                // Escape 取消
+                const handleKeyUp = (e) => {
+                    if (e.key === 'Escape') {
+                        backdrop.removeEventListener('keyup', handleKeyUp);
+                        cleanup();
+                        resolve(false);
+                    }
+                };
+                backdrop.addEventListener('keyup', handleKeyUp);
+                backdrop.focus();
+            });
+        }
+
+        async function showSudoPasswordDialog(message, command) {
+            return new Promise((resolve) => {
+                // 创建模态对话框
+                const backdrop = document.createElement('div');
+                backdrop.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: rgba(0, 0, 0, 0.5);
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    z-index: 9999;
+                `;
+
+                const dialog = document.createElement('div');
+                dialog.style.cssText = `
+                    background: #2d2d2d;
+                    border: 1px solid #444;
+                    border-radius: 8px;
+                    padding: 24px;
+                    width: 450px;
+                    max-height: 70vh;
+                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+                    color: #ccc;
+                    font-family: 'Segoe UI', sans-serif;
+                    overflow-y: auto;
+                `;
+
+                let commandDisplay = '';
+                if (command) {
+                    commandDisplay = `
+                        <div style="background: #1e1e1e; border: 1px solid #444; border-radius: 4px; padding: 12px; margin-bottom: 16px;">
+                            <div style="font-size: 11px; color: #888; margin-bottom: 8px;">将执行的命令:</div>
+                            <code style="
+                                display: block;
+                                color: #d7ba7d;
+                                font-family: 'Fira Code', monospace;
+                                font-size: 12px;
+                                word-break: break-all;
+                                white-space: pre-wrap;
+                                overflow-x: auto;
+                            ">${command}</code>
+                        </div>
+                    `;
+                }
+
+                dialog.innerHTML = `
+                    <div style="margin-bottom: 20px;">
+                        <h2 style="margin: 0 0 12px 0; color: #fff; font-size: 18px;">🔐 需要管理员密码</h2>
+                        <div style="background: #3a2a2a; border-left: 3px solid #e74c3c; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                            <p style="margin: 0; color: #ffaaaa; font-size: 13px;">⚠️ 仅在信任的命令中输入密码</p>
+                            <p style="margin: 8px 0 0 0; color: #ccc; font-size: 12px;">此操作需要 sudo 权限</p>
+                        </div>
+                        ${commandDisplay}
+                        <p style="margin: 0; color: #ccc; font-size: 14px;">${message}</p>
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 8px; font-size: 13px; color: #aaa;">密码:</label>
+                        <input type="password" id="sudoPasswordInput" style="
+                            width: 100%;
+                            padding: 8px 12px;
+                            background: #1e1e1e;
+                            border: 1px solid #444;
+                            border-radius: 4px;
+                            color: #ccc;
+                            font-family: monospace;
+                            box-sizing: border-box;
+                        " placeholder="输入你的系统密码">
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <button id="sudoSubmitBtn" style="
+                            flex: 1;
+                            padding: 8px 16px;
+                            background: #e74c3c;
+                            color: white;
+                            border: none;
+                            border-radius: 4px;
+                            cursor: pointer;
+                            font-size: 14px;
+                            font-weight: 500;
+                        ">提交</button>
+                        <button id="sudoCancelBtn" style="
+                            flex: 1;
+                            padding: 8px 16px;
+                            background: #444;
+                            color: #ccc;
+                            border: none;
+                            border-radius: 4px;
+                            cursor: pointer;
+                            font-size: 14px;
+                        ">取消</button>
+                    </div>
+                `;
+
+                backdrop.appendChild(dialog);
+                document.body.appendChild(backdrop);
+
+                const passwordInput = dialog.querySelector('#sudoPasswordInput');
+                const submitBtn = dialog.querySelector('#sudoSubmitBtn');
+                const cancelBtn = dialog.querySelector('#sudoCancelBtn');
+
+                const cleanup = () => {
+                    backdrop.remove();
+                };
+
+                const handleSubmit = () => {
+                    const password = passwordInput.value;
+                    cleanup();
+                    resolve(password || null); // 返回密码或 null
+                };
+
+                const handleCancel = () => {
+                    cleanup();
+                    resolve(null); // 返回 null 表示用户取消
+                };
+
+                submitBtn.onclick = handleSubmit;
+                cancelBtn.onclick = handleCancel;
+                
+                // 回车提交
+                passwordInput.onkeyup = (e) => {
+                    if (e.key === 'Enter') handleSubmit();
+                    if (e.key === 'Escape') handleCancel();
+                };
+
+                // 自动聚焦输入框
+                setTimeout(() => passwordInput.focus(), 100);
+            });
+        }
+
+        async function showMyCustomDialog(msg) {
+            // 这里可以是你的 Vue/React 组件或简单的 confirm
+            return confirm(msg); 
+        }
+
         init();
     </script>
 </body>

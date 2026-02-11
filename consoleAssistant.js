@@ -16,10 +16,10 @@ const normalAssistantPrompt = '你是一个linux平台下的ai助手';
 const maxRetry = 10;
 
 class ConsoleAssistant {
-    constructor() {
+    constructor(permissionRequester = null) {
         this.consoles = new Map;
         this.reflectionMap = new Map;
-        this.terminal = new AdvancedTerminal(this.getPassword);
+        this.terminal = new AdvancedTerminal(this.getPassword.bind(this));
         this.taskCategoryJudgement = new Conversation({
             role: taskCategoryJudgementPrompt,
             memory: false,
@@ -30,9 +30,18 @@ class ConsoleAssistant {
         });
 
         this.taskCompleteCallback = []; //callback sign like (isCompelted, consoleNum)
+        this.permissionRequester = permissionRequester; // 权限请求函数（从main.js传入）
         
         this.createNewConsole(0);
         this.terminal.processDoneCallbacksAddListener(this.onCommandDone.bind(this));
+    }
+
+    /**
+     * 设置权限请求函数（依赖注入）
+     * @param {Function} requester 权限请求函数
+     */
+    setPermissionRequester(requester) {
+        this.permissionRequester = requester;
     }
 
     createNewConsole(key) {
@@ -112,17 +121,18 @@ class ConsoleAssistant {
     }
 
     /**
-     * [不安全] 直接识别用户需求并执行代码
+     * 识别用户需求、获取权限并执行命令
      * @param {number} consoleNum 对话窗口编号
      * @param {string} task 用户以自然语言描述的任务需求
      * @param {string} taskCategory 任务类型(shell/code 协助), 为 null 时自动选择
      * @param {boolean} correcting 是否用于修正最开始的需求
-     * */ 
+     * @returns {Promise<string>} 执行结果或对话消息
+     */ 
     async consoleAssignTask(consoleNum, task, taskCategory = null, correcting = false) {
-        // 修改条件判断：在纠正模式下，task 可以是命令输出
+        // 参数检查
         if (!task && !correcting) {
             console.log(`consoleAssignTask fail: 未指定任务`);
-            return false;
+            return 'error: 任务为空';
         }
 
         let consoleInfo = this.consoles.get(consoleNum);
@@ -131,21 +141,61 @@ class ConsoleAssistant {
             consoleInfo = this.consoles.get(consoleNum);
         }
 
-        // 真正获取命令的部分
-        const command = await this.getConsoleTask(consoleInfo, task, taskCategory);
+        // 第1步：生成命令
+        const command = await this.getConsoleTask(consoleInfo, task, taskCategory, correcting);
 
-        if (command) {
-            // 识别错误信息并直接交给上层
-            if (command.startsWith('error:')) {
-                return command;
-            }
-            // 等待用户同意执行命令
-            // TODO: 此处等待获取用户同意
-
-            // 真正执行命令
-            return await this.terminal.executeCommand(command, consoleInfo.processId);
+        if (!command || command.startsWith('error:')) {
+            return command || 'error: 获取命令失败';
         }
-        return 'error: 获取命令失败';
+
+        // 第2步：权限检查与执行
+        return await this._executeCommandWithPermission(command, consoleInfo);
+    }
+
+    /**
+     * 权限检查和命令执行的核心逻辑
+     * @private
+     */
+    async _executeCommandWithPermission(command, consoleInfo) {
+        const { containSudoCommand } = require('./AdvancedTerminal');
+        
+        let shouldExecute = false;
+        let executionResult = "";
+        
+        // 权限检查：sudo 命令 vs 普通命令
+        if (containSudoCommand(command)) {
+            // sudo 命令：获取密码（密码即确认）
+            const sudoPassword = await this.getPassword(command);
+            if (!sudoPassword) {
+                return `### 执行取消\n需要管理员密码才能执行此命令`;
+            }
+            shouldExecute = true;
+        } else {
+            // 普通命令：获取用户确认
+            const userConfirm = await this.getUserPermission(command);
+            if (!userConfirm) {
+                return `### 执行取消\n命令: \n\`\`\`sh\n${command}\n\`\`\``;
+            }
+            shouldExecute = true;
+        }
+
+        // 第3步：执行命令
+        if (shouldExecute) {
+            try {
+                let ret = await this.terminal.executeCommand(command, consoleInfo.processId);
+                let output = ret?.output;
+                
+                if (output) {
+                    executionResult = `### 命令: \n\`\`\`sh\n${command}\n\`\`\`\n### 任务执行结果:\n\`\`\`sh\n${output || '无输出'}\n\`\`\``;
+                } else {
+                    executionResult = `### 执行失败\n命令: \n\`\`\`sh\n${command}\n\`\`\``;
+                }
+            } catch (error) {
+                executionResult = `### 执行异常\n命令: \n\`\`\`sh\n${command}\n\`\`\`\n错误: ${error.message}`;
+            }
+        }
+
+        return executionResult;
     }
 
     async onCommandDone(reflectionId, result) {
@@ -192,13 +242,50 @@ class ConsoleAssistant {
         return ret;
     }
 
-    async getPassword() {
-        // TODO: 在这里实现向外部传递等待密码输入的msg,弹出一个密码输入窗口，让用户输入密码
-        return
+    /**
+     * 获取 sudo 密码
+     * @param {string} command 将要执行的命令（可选，用于在对话框中显示）
+     * @returns {Promise<string|null>} 密码字符串或 null
+     */
+    async getPassword(command = null) {
+        if (!this.permissionRequester) {
+            console.warn('未配置权限请求函数，无法请求密码');
+            return null;
+        }
+        try {
+            const password = await this.permissionRequester({
+                type: 'sudo-password',
+                command: command,
+                message: '执行此命令需要管理员密码'
+            });
+            return password;
+        } catch (error) {
+            console.error('获取密码失败:', error);
+            return null;
+        }
     }
 
-    async getUserPermission() {
-        // TODO: 此处实现向外部传递等待用户同意的msg
+    /**
+     * 获取用户对命令执行的确认
+     * @param {string} command 要执行的命令
+     * @returns {Promise<boolean>} true表示用户确认，false表示取消
+     */
+    async getUserPermission(command) {
+        if (!this.permissionRequester) {
+            console.warn('未配置权限请求函数，无法请求权限');
+            return false;
+        }
+        try {
+            const permission = await this.permissionRequester({
+                type: 'run-confirmation',
+                command: command,
+                message: '确认是否执行此命令？'
+            });
+            return permission === true;
+        } catch (error) {
+            console.error('获取权限失败:', error);
+            return false;
+        }
     }
 
     async normalConversation(content) {

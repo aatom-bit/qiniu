@@ -1,7 +1,10 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const { randomUUID } = require('crypto');
+
 const { Listen, ListenClose } = require('./util/rtasr-ws-node.js');
 const { loadHistory, saveHistory, initHistory, getSession } = require('./util/historyStore');
+const { containSudoCommand } = require('./AdvancedTerminal.js');
 const { ConsoleAssistant } = require('./consoleAssistant');
 
 // 代替默认终端输出，自动保存为log
@@ -142,11 +145,76 @@ function getAiDecision(content) {
     return 'chat';
 }
 
+async function getSudoPermission(content) {
+    // 如果包含sudo命令，则向用户申请密码(仅需一次)，并返回；否则返回null
+    if (containSudoCommand(content)) {
+        try {
+            const password = await requestPermissionFromRenderer(mainWin.webContents, {
+                type: 'sudo-password',
+                message: '执行此命令需要管理员密码'
+            });
+            return password.output ? password.output : password;
+        } catch (error) {
+            console.error('获取密码失败:', error);
+            return null;
+        }
+    }
+    return null;
+}
+
+async function getRunPermission(content) {
+    // 显示用户确认执行 content 命令的窗口，返回用户的确认结果
+    try {
+        const permission = await requestPermissionFromRenderer(mainWin.webContents, {
+            type: 'run-confirmation',
+            command: content,
+            message: '确认是否执行此命令？'
+        });
+        return permission === true; // 只有用户点击"执行"才返回 true
+    } catch (error) {
+        console.error('获取运行权限失败:', error);
+        return false;
+    }
+}
+
+// 存储所有待处理的请求：Map<requestId, { resolve, reject }>
+const pendingRequests = new Map();
+
 /**
- * 处理用户输入并同步历史记录
- * @param {string} content 用户输入的文本
- * @param {number} sessionId 当前会话索引
+ * 主进程发起权限请求的函数
+ * @param {WebContents} webContents 目标窗口的 webContents
+ * @param {Object} data 请求参数（如权限类型）
+ * @returns {Promise}
  */
+function requestPermissionFromRenderer(webContents, data) {
+    return new Promise((resolve, reject) => {
+        const requestId = randomUUID(); // 生成唯一ID，确保并发不冲突
+        
+        // 1. 存入 Map
+        pendingRequests.set(requestId, { resolve, reject });
+
+        // 2. 发送给前端
+        webContents.send('ask-for-permission', { requestId, ...data });
+
+        // 可选：设置超时，防止渲染进程不响应导致内存泄漏
+        setTimeout(() => {
+            if (pendingRequests.has(requestId)) {
+                pendingRequests.delete(requestId);
+                reject(new Error('Permission request timed out'));
+            }
+        }, 60000); // 60秒超时
+    });
+}
+
+// 监听渲染进程的回执
+ipcMain.on('permission-response', (event, { requestId, result }) => {
+    const request = pendingRequests.get(requestId);
+    if (request) {
+        request.resolve(result); // 触发 Promise 成功
+        pendingRequests.delete(requestId); // 及时清理
+    }
+});
+
 async function handleUserInput(content, sessionId, sessionCount = -1) {
     const decision = getAiDecision(content); // 之前写的意图识别函数
     const session = getSession(chatHistory, sessionId, true, sessionCount);
@@ -161,26 +229,13 @@ async function handleUserInput(content, sessionId, sessionCount = -1) {
             // 状态通知：让前端知道正在开始执行
             mainWin.webContents.send('update-status', { role: 'ai', content: `🚀 正在准备执行相关指令...` });
 
-            // TODO：这里不该直接执行命令，应该让用户先看一下命令，然后ai提示该命令的作用和风险，然后用户进行确认和取消
-            // 执行命令逻辑
-            let ret = await consoleAssistant.consoleAssignTask(0, content);
-            
-            let output = ret?.output;
-            if (output) {
-                // 整理输出结果：如果是 shell，通常用代码块包裹
-                aiFinalContent = `任务执行结果：\n\`\`\`sh\n${output || '无输出'}\n\`\`\``;
-            } else {
-                aiFinalContent = `ai agent错误, 执行失败`;
-            }
-            
+            // 直接调用 consoleAssignTask，由 ConsoleAssistant 处理所有权限和执行逻辑
+            aiFinalContent = await consoleAssistant.consoleAssignTask(sessionId, content);
         } else {
             // 纯聊天内容
             let ret = await consoleAssistant.normalConversation(content);
             aiFinalContent = ret ? ret : `ai agent发生错误`;
         }
-        // TTS 播报结果
-            // const ttsBuffer = await getTTSVoice(`执行完毕。${aiFinalContent.substring(0, 50)}`);
-            // await playAudio(ttsBuffer);
     } catch (error) {
         aiFinalContent = `❌ 发生错误: ${error.message}`;
     }
@@ -312,6 +367,8 @@ ipcMain.on('quick-listen', async (event, data) => {
 
 app.on('ready', () => {
     createMainWindow();
+    // 为 ConsoleAssistant 注入权限请求函数（此时 mainWin 已创建）
+    consoleAssistant.setPermissionRequester((data) => requestPermissionFromRenderer(mainWin.webContents, data));
 });
 
 app.on('window-all-closed', () => {

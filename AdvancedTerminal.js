@@ -5,6 +5,19 @@ const EventEmitter = require('events');
 const process = require('process');
 const pty = require('@lydell/node-pty');
 
+function containSudoCommand(commands) {
+    if (!commands || typeof commands !== 'string') {
+        return false;
+    }
+    const commandLines = commands.split('\n');
+    for (const c of commandLines) {
+        if (c.trim().startsWith('sudo')) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function parseCommands(commands) {
     if (!commands || typeof commands !== 'string') {
         return [];
@@ -92,8 +105,8 @@ class AdvancedTerminal extends EventEmitter{
 
         this.getPasswordFromExternal = getPasswordEvent; // 读取密码的接口、
 
-        // WARN: 作为接口时设为false
-        this.getPasswordFromConsole = true;
+        // WARN: 在其他窗口获取密码时设为false
+        this.getPasswordFromConsole = false;
     }
 
     setupReadline() {
@@ -260,15 +273,8 @@ class AdvancedTerminal extends EventEmitter{
         procInfo.commandComplete = false; // 重置完成状态
 
         // 检查是否含有管理员命令
-        let hasSudoCommand = false;
+        let hasSudoCommand = containSudoCommand(command);
         let commandLines = parseCommands(command);
-        
-        for (const c of commandLines) {
-            if (c.trim().startsWith('sudo')) {
-                hasSudoCommand = true;
-                break;
-            }
-        }
 
         // 如果是sudo命令且尚未验证权限，预先获取权限
         if (hasSudoCommand && !procInfo.allow) {
@@ -1077,4 +1083,4 @@ class AdvancedTerminal extends EventEmitter{
 // new AdvancedTerminal();
 
 // 导出供其他模块使用
-module.exports = { AdvancedTerminal };
+module.exports = { AdvancedTerminal, containSudoCommand };
