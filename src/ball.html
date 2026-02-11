@@ -504,10 +504,24 @@
         clearTimeout(longPressTimer);
 
         if (isLongPressActive) {
-            console.log("长按结束：停止录音");
-            window.electronAPI.QuickListen(true, false);
-            isLongPressActive = false;
-            setBallState(isBegin ? 'active' : 'default');
+            // 录音最短时间限制 500ms
+            if (clickDuration >= 500) {
+                console.log("长按结束：停止录音，按压时长:", clickDuration, "ms");
+                window.electronAPI.QuickListen(true, false);
+                isLongPressActive = false;
+                setBallState(isBegin ? 'active' : 'default');
+            } else {
+                console.log("长按时间过短 " + clickDuration + "ms，继续录音直到 500ms");
+                // 继续等待直到达到 500ms
+                setTimeout(() => {
+                    if (isLongPressActive) {
+                        console.log("最短时间达到，停止录音");
+                        window.electronAPI.QuickListen(true, false);
+                        isLongPressActive = false;
+                        setBallState(isBegin ? 'active' : 'default');
+                    }
+                }, 500 - clickDuration);
+            }
         } 
         else if (!hasMoved && clickDuration < 200) {
             console.log("触发单击：切换主窗口");
