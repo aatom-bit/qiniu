@@ -4,60 +4,447 @@
     <meta charset="utf-8">
     <title>Floating Ball</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+        
+        body {
+            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-user-drag: none;
+        }
         html, body {
             margin: 0;
             height: 100%;
             background: transparent;
+            box-shadow: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            line-height: 0;
             /* box-shadow: 0 0 0px rgba(0, 0, 0, 0); */
+        }
+
+        /* 禁用所有选择高亮 */
+        ::selection {
+            background: transparent;
+            color: inherit;
+        }
+
+        ::-moz-selection {
+            background: transparent;
+            color: inherit;
+        }
+
+        #ball-container {
+            width: 100px;
+            height: 100px;
+            position: relative;
+            cursor: grab;
+            box-shadow: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            -webkit-user-drag: none;
+            -webkit-touch-callout: none;
+            margin: 0;
+            padding: 0;
+            border: none;
         }
 
         #ball {
-            width: 50px;
-            height: 50px;
+            width: 60px;
+            height: 60px;
             border-radius: 50%;
             background: radial-gradient(circle at 30% 30%, #ff9a6b, #ff6b6b);
-            /* box-shadow: 0 0 0px rgba(0, 0, 0, 0); */
             cursor: grab;
-            transition: transform 0.15s;
+            transition: transform 0.1s ease-out;
+            box-shadow: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            overflow: visible;
+            margin: 0;
+            padding: 0;
+            border: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            -webkit-user-drag: none;
+            -webkit-touch-callout: none;
         }
 
-        #ball:active {
+        #ball.dragging {
             cursor: grabbing;
-            transform: scale(0.95);
+            transform: translate(-50%, -50%) scale(0.95) !important;
+        }
+
+        #ball::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 50%);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        #ball-icon {
+            position: relative;
+            z-index: 2;
+            transition: opacity 0.3s ease;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.5);
+            }
+            50% {
+                box-shadow: 0 0 0 12px rgba(255, 107, 107, 0);
+            }
+        }
+
+        #ball.active {
+            animation: rotate 3s linear infinite !important;
+        }
+
+        #ball.recording {
+            animation: pulse 0.8s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+        }
+
+        @keyframes rotate {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        /* 涟漪层 */
+        #ripple {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 107, 107, 0.6);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        @keyframes ripple-expand {
+            0% {
+                width: 60px;
+                height: 60px;
+                border-color: rgba(255, 107, 107, 0.8);
+                opacity: 1;
+            }
+            100% {
+                width: 120px;
+                height: 120px;
+                border-color: rgba(255, 107, 107, 0);
+                opacity: 0;
+            }
+        }
+
+        #ripple.active {
+            animation: ripple-expand 0.6s ease-out;
+        }
+
+        #stats {
+            position: absolute;
+            bottom: 3px;
+            right: 3px;
+            font-size: 9px;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 2px 3px;
+            border-radius: 2px;
+            font-family: monospace;
+            line-height: 1;
+            text-align: right;
+            width: 22px;
+            z-index: 3;
+        }
+
+        #ball.day {
+            background: radial-gradient(circle at 30% 30%, #ffeb3b, #ffc107);
+        }
+
+        #ball.night {
+            background: radial-gradient(circle at 30% 30%, #424242, #1a1a1a);
+            color: #fff;
+        }
+
+        #ball.dusk {
+            background: radial-gradient(circle at 30% 30%, #ff7043, #e64a19);
+        }
+
+        /* 装饰元素 */
+        #decorations {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            border-radius: 50%;
+            overflow: hidden;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .decoration {
+            position: absolute;
+            font-size: 18px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 1;
+        }
+
+        .decoration.show {
+            opacity: 0.7;
+        }
+
+        /* 云朵装饰 */
+        .cloud {
+            top: 10px;
+            left: 45%;
+            transform: translateX(-50%);
+        }
+
+        /* 星星装饰 */
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.8; }
+        }
+
+        .star {
+            animation: twinkle 2s infinite;
+        }
+
+        .star-1 {
+            top: 8%;
+            left: 10%;
+        }
+
+        .star-2 {
+            top: 8%;
+            right: 10%;
+        }
+
+        .star-3 {
+            bottom: 8%;
+            left: 10%;
+        }
+
+        .star-4 {
+            bottom: 8%;
+            right: 10%;
+        }
+
+        /* 月光光晕 */
+        @keyframes glow {
+            0%, 100% { 
+                box-shadow: 0 0 8px rgba(200, 200, 255, 0.3) inset;
+            }
+            50% { 
+                box-shadow: 0 0 15px rgba(200, 200, 255, 0.6) inset;
+            }
+        }
+
+        #ball.night {
+            animation: glow 3s ease-in-out infinite;
+        }
+
+        /* 风吹动画 */
+        @keyframes float {
+            0%, 100% { transform: translateX(0px); }
+            50% { transform: translateX(2px); }
+        }
+
+        .decoration.float {
+            animation: float 2s ease-in-out infinite;
+        }
+
+        /* 工作动画 */
+        @keyframes work-bounce {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-3px); }
+        }
+
+        #ball.working .decoration {
+            animation: work-bounce 0.8s ease-in-out infinite;
         }
 
     </style>
 </head>
 <body>
-<div id="ball"></div>
+<div id="ball-container" draggable="false">
+    <div id="ball" draggable="false" style="image-rendering: pixelated; touch-action: none;">
+        <div id="decorations">
+            <div class="decoration cloud" id="cloud">☁️</div>
+            <div class="decoration star star-1" id="star-1">⭐</div>
+            <div class="decoration star star-2" id="star-2">✨</div>
+            <div class="decoration star star-3" id="star-3">⭐</div>
+            <div class="decoration star star-4" id="star-4">✨</div>
+        </div>
+        <div id="ball-icon">☀️</div>
+        <div id="stats">CPU RAM</div>
+    </div>
+    <div id="ripple"></div>
+</div>
 
 <script type="module">
     const ball = document.getElementById('ball');
+    const ballIcon = document.getElementById('ball-icon');
+    const statsDiv = document.getElementById('stats');
+    const ripple = document.getElementById('ripple');
+    const cloudDeco = document.getElementById('cloud');
+    const starDecos = [document.getElementById('star-1'), document.getElementById('star-2'), 
+                       document.getElementById('star-3'), document.getElementById('star-4')];
+    
     let isBegin = false;
     let isLongPressActive = false; 
     
     // 拖动实现
     let dragging = false;
-    let hasMoved = false; // 是否触发了位移
-    let longPressTimer = null; // 长按计时器
+    let hasMoved = false;
+    let longPressTimer = null;
     let startX = 0, startY = 0;
     let windowStartX = 0, windowStartY = 0;
     let mouseDownTime = 0;
 
-    // 视觉反馈函数
-    const setBallColor = (type) => {
-        if (type === 'recording') {
-            ball.style.background = 'radial-gradient(circle at 30% 30%, #ff4b4b, #c0392b)'; // 录音中：深红
-        } else if (type === 'active') {
-            ball.style.background = 'radial-gradient(circle at 30% 30%, #6bff9a, #2ecc71)'; // 双击开启：绿色
+    // ===== 全局事件禁用 =====
+    // 禁止所有形式的文本选择和拖动反馈
+    document.addEventListener('selectstart', (e) => {
+        e.preventDefault();
+        return false;
+    }, { capture: true });
+
+    document.addEventListener('mousedown', (e) => {
+        if (e.detail > 1) { // 多击
+            e.preventDefault();
+            return false;
+        }
+    }, { capture: true });
+
+    document.addEventListener('mousemove', (e) => {
+        // 禁止生成选择拖拽反馈
+    }, { capture: true });
+
+    document.addEventListener('dragstart', (e) => {
+        e.preventDefault();
+        return false;
+    }, { capture: true });
+
+    document.addEventListener('drag', (e) => {
+        e.preventDefault();
+        return false;
+    }, { capture: true });
+
+    // 禁用文本选择的CSS cursor
+    document.body.style.WebkitUserSelect = 'none';
+    document.body.style.MozUserSelect = 'none';
+    document.body.style.msUserSelect = 'none';
+    document.body.style.userSelect = 'none';
+    
+    // ===== 涟漪效果 =====
+    const playRipple = () => {
+        ripple.classList.remove('active');
+        // 强制重排以重新触发动画
+        void ripple.offsetWidth;
+        ripple.classList.add('active');
+    };
+
+    // 获取时间段并更新外观及装饰
+    const updateTimeTheme = () => {
+        const hour = new Date().getHours();
+        
+        // 隐藏所有装饰
+        cloudDeco.classList.remove('show', 'float');
+        starDecos.forEach(star => star.classList.remove('show'));
+        
+        if (hour >= 6 && hour < 12) {
+            // 早上：黄色太阳 + 云朵
+            ball.className = 'day';
+            ballIcon.textContent = '🌅';
+            cloudDeco.classList.add('show', 'float');
+            cloudDeco.textContent = '☁️';
+        } else if (hour >= 12 && hour < 17) {
+            // 中午到下午：明亮太阳 + 偶尔的云朵
+            ball.className = 'day';
+            ballIcon.textContent = '☀️';
+            if (Math.random() > 0.5) {
+                cloudDeco.classList.add('show', 'float');
+                cloudDeco.textContent = '☁️';
+            }
+        } else if (hour >= 17 && hour < 20) {
+            // 傍晚：落日 + 云朵
+            ball.className = 'dusk';
+            ballIcon.textContent = '🌅';
+            cloudDeco.classList.add('show', 'float');
+            cloudDeco.textContent = '🌧️';
         } else {
-            ball.style.background = 'radial-gradient(circle at 30% 30%, #ff9a6b, #ff6b6b)'; // 默认：橙红
+            // 晚上：月亮 + 星星
+            ball.className = 'night';
+            ballIcon.textContent = hour >= 20 && hour < 23 ? '🌙' : '⭐';
+            cloudDeco.classList.add('show');
+            cloudDeco.textContent = '🌙';
+            starDecos.forEach(star => star.classList.add('show'));
+        }
+    };
+
+    // 获取系统CPU和RAM占用
+    const updateStats = async () => {
+        try {
+            const stats = await window.electronAPI.getSystemStats?.();
+            if (stats) {
+                statsDiv.innerHTML = `${stats.cpu}<br/>${stats.ram}`;
+            }
+        } catch (error) {
+            console.error('获取系统信息失败:', error);
+        }
+    };
+
+    // 初始化和定时更新
+    updateTimeTheme();
+    updateStats();
+    setInterval(updateTimeTheme, 60000); // 每分钟更新一次主题
+    setInterval(updateStats, 2000); // 每2秒更新一次系统信息
+
+    // 视觉反馈函数
+    const setBallState = (type) => {
+        // 先移除所有动画类
+        ball.classList.remove('active', 'recording', 'working', 'dragging');
+        
+        if (type === 'recording') {
+            ball.classList.add('recording');
+            cloudDeco.classList.remove('show');
+            starDecos.forEach(star => star.classList.remove('show'));
+        } else if (type === 'active') {
+            ball.classList.add('active');
+            cloudDeco.classList.remove('show');
+            starDecos.forEach(star => star.classList.remove('show'));
+        } else {
+            updateTimeTheme(); // 恢复时间主题
         }
     };
     
     ball.addEventListener('mousedown', (e) => {
         console.log("悬浮窗左键点击")
-        if (e.button !== 0) return; // 只响应左键
+        if (e.button !== 0) return;
+        
+        ball.classList.add('dragging');
+        playRipple(); // 触发涟漪效果
         
         dragging = true;
         startX = e.screenX;
@@ -65,7 +452,6 @@
         hasMoved = false;
         mouseDownTime = Date.now();
         
-        // 获取当前窗口位置
         window.electronAPI.getWindowPosition()
             .then(pos => {
                 windowStartX = pos.x;
@@ -75,22 +461,18 @@
                 console.error('获取窗口位置失败:', err);
             });
 
-        // 250ms 后判定为长按
         longPressTimer = setTimeout(() => {
             if (!hasMoved && dragging) {
+                playRipple(); // 触发涟漪效果
                 isLongPressActive = true;
                 console.log("触发长按：开始录音");
-                window.electronAPI.Listen(true, true); // 参数1: isLongPress=true, 参数2: isBegin=true
-                setBallColor('recording');
+                window.electronAPI.QuickListen(true, true);
+                setBallState('recording');
             }
         }, 250);
         
-        // 防止默认行为
         e.preventDefault();
         e.stopPropagation();
-        
-        // 添加一个临时类来改变鼠标样式
-        ball.classList.add('dragging');
     });
     
     window.addEventListener('mousemove', (e) => {
@@ -117,19 +499,19 @@
     window.addEventListener('mouseup', () => {
         if (!dragging) return;
         
+        ball.classList.remove('dragging');
         const clickDuration = Date.now() - mouseDownTime;
-        clearTimeout(longPressTimer); // 抬起时必须清除计时器
+        clearTimeout(longPressTimer);
 
         if (isLongPressActive) {
-            // 如果刚才处于长按录音状态，抬起即停止
             console.log("长按结束：停止录音");
-            // window.electronAPI.Listen(true, false); // 发送停止指令
+            window.electronAPI.QuickListen(true, false);
             isLongPressActive = false;
-            setBallColor(isBegin ? 'active' : 'default'); // 恢复颜色
+            setBallState(isBegin ? 'active' : 'default');
         } 
         else if (!hasMoved && clickDuration < 200) {
-            // 只有没移动过且时间短，才视为单击（切换窗口）
             console.log("触发单击：切换主窗口");
+            playRipple(); // 触发涟漪效果
             window.electronAPI.toggleMainWindow();
         }
 
@@ -138,15 +520,60 @@
     
     // 双击事件
     ball.addEventListener('dblclick', (e) => {
+        playRipple(); // 触发涟漪效果
         isBegin = !isBegin;
         console.log('触发双击，状态:', isBegin ? '开始' : '停止');
-        window.electronAPI.Begin(false, isBegin);
-        setBallColor(isBegin ? 'active' : 'default');
+        window.electronAPI.QuickListen(false, isBegin);
+        setBallState(isBegin ? 'active' : 'default');
     });
     
-    // 防止文本选中
+    // 防止文本选中和选择
+    document.addEventListener('selectstart', (e) => {
+        e.preventDefault();
+        return false;
+    });
+
     ball.addEventListener('selectstart', (e) => {
         e.preventDefault();
+        return false;
+    });
+
+    // 禁用双击选择
+    document.addEventListener('dblclick', (e) => {
+        if (e.target === ball || ball.contains(e.target)) {
+            e.preventDefault();
+            return false;
+        }
+    }, { capture: true });
+
+    // 禁用拖动事件
+    ball.addEventListener('dragstart', (e) => {
+        e.preventDefault();
+        return false;
+    });
+
+    // 禁用上下文菜单
+    ball.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        return false;
+    });
+
+    // 禁用触摸选择
+    document.addEventListener('touchmove', (e) => {
+        if (e.target === ball || ball.contains(e.target)) {
+            e.preventDefault();
+            return false;
+        }
+    }, { passive: false });
+
+    // 禁用mouseup导致的选择
+    document.addEventListener('mouseup', (e) => {
+        if (e.target === ball || ball.contains(e.target)) {
+            // 清空任何可能的选择
+            if (window.getSelection) {
+                window.getSelection().removeAllRanges();
+            }
+        }
     });
 </script>
 </body>

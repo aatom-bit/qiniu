@@ -5,12 +5,14 @@
     <meta charset="UTF-8">
     <title>Linux AI 助手</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+        
         body,
         html {
             margin: 0;
             padding: 0;
             height: 100%;
-            font-family: 'Segoe UI', sans-serif;
+            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
             background: #1e1e1e;
             color: #ccc;
         }
@@ -433,13 +435,18 @@
         sendBtn.onclick = send;
         userInput.onkeyup = (e) => { if (e.key === 'Enter') send(); };
 
-        // // 监听来自语音识别的结果并填入输入框
-        // window.electronAPI.onUpdateStatus((event, data) => {
-        //     if (data.role === 'user') {
-        //         userInput.value = data.content;
-        //         send(); // 自动发送语音识别的内容
-        //     }
-        // });
+        // 监听来自语音识别的结果并填入输入框
+        window.electronAPI.onUpdateStatus((data) => {
+            if (data.role === 'voice-input') {
+                // 语音识别结果填充到输入框
+                userInput.value = data.content;
+                userInput.focus(); // 自动聚焦，便于用户编辑
+                // 不自动发送，让用户可以编辑后再发送
+            } else if (data.role === 'ai') {
+                // 其他AI回复可以作为日志显示在控制台
+                console.log(data.content);
+            }
+        });
 
         const toggleBallBtn = document.getElementById('toggle-ball-btn');
         let isBallShowing = false;

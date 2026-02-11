@@ -26,14 +26,19 @@ function getWsUrl(hostUrl, apiKey, apiSecret) {
     return authUrl.replace("https://", "wss://").replace("http://", "ws://");
 }
 
-function send(micInputStream, ws, isLongPress) {
+function send(micInputStream, ws, isLongPress, onError) {
     let seq = 0;
     let status = StatusFirstFrame;
-
+    let sendFailed = false;
 
     console.log("Mic opening")
+    // 非长按模式下10秒后自动关闭
     if (!isLongPress) ListenCloseAfter5s();
+    
     micInputStream.on('data', (chunk) => {
+        // 如果之前发生错误，停止继续发送
+        if (sendFailed) return;
+        
         seq++;
         let frameStatus = status;
         if (status === StatusFirstFrame) status = StatusContinueFrame;
@@ -66,15 +71,28 @@ function send(micInputStream, ws, isLongPress) {
             }
         };
 
-        ws.send(JSON.stringify(payload));
+        try {
+            ws.send(JSON.stringify(payload));
+        } catch (err) {
+            console.error('WebSocket send error:', err);
+            sendFailed = true;
+            if (onError) onError(err);
+        }
     });
 
     micInputStream.on('error', (err) => {
-        console.log('Mic error:', err);
+        console.error('Mic error:', err);
+        sendFailed = true;
+        if (onError) onError(err);
     });
 
-// 监听关闭或停止发送最后一帧
+    // 监听关闭事件，发送最后一帧
     micInputStream.on('end', () => {
+        if (sendFailed) {
+            console.log("Send failed, skip final frame");
+            return;
+        }
+        
         seq++;
         const payload = {
             header: {app_id: appid, status: StatusLastFrame},
@@ -90,21 +108,21 @@ function send(micInputStream, ws, isLongPress) {
                 }
             }
         };
-        ws.send(JSON.stringify(payload));
-        console.log("Mic close");
+        
+        try {
+            ws.send(JSON.stringify(payload));
+            console.log("Mic close - final frame sent");
+        } catch (err) {
+            console.error('WebSocket send final frame error:', err);
+            if (onError) onError(err);
+        }
     });
 }
 
 async function Listen(isLongPress) {
     return new Promise((resolve, reject) => {
-        let ws = null;
-        let mic = null;
-
         const wsUrl = getWsUrl(hostUrl, apiKey, apiSecret);
         ws = new WebSocket(wsUrl);
-
-        // let res = "";
-        // let last = "";
 
         mic = Mic({
             rate: '16000',
@@ -113,92 +131,83 @@ async function Listen(isLongPress) {
             encoding: 'signed-integer',
         });
         let finalResult = "";
+        let settled = false;  // 标志以防止重复resolve/reject
 
         ws.on('message', (data) => {
-            const message = JSON.parse(data.toString());
-            if (message.payload && message.payload.result) {
-                const result = message.payload.result;
-                if (result.text) {
-                    const decoded = Buffer.from(result.text, 'base64').toString('utf8');
-                    const jsonRes = JSON.parse(decoded);
-                    let tempText = "";
-                    jsonRes.ws.forEach(wsItem => wsItem.cw.forEach(cw => tempText += cw.w));
-                    
-                    if (result.status === 2) {
-                        finalResult += tempText;
+            try {
+                const message = JSON.parse(data.toString());
+                if (message.payload && message.payload.result) {
+                    const result = message.payload.result;
+                    if (result.text) {
+                        const decoded = Buffer.from(result.text, 'base64').toString('utf8');
+                        const jsonRes = JSON.parse(decoded);
+                        let tempText = "";
+                        jsonRes.ws.forEach(wsItem => wsItem.cw.forEach(cw => tempText += cw.w));
+                        
+                        if (result.status === 2) {
+                            finalResult += tempText;
+                        }
                     }
                 }
+            } catch (err) {
+                console.error("Failed to parse message:", err);
             }
         });
 
         ws.on('close', () => {
-            console.log("识别结束:", finalResult);
-            resolve(finalResult); // 返回最终识别的文本
+            console.log("WebSocket closed. Final result:", finalResult);
+            mic = null;
+            ws = null;
+            if (!settled) {
+                settled = true;
+                resolve(finalResult); // 返回最终识别的文本
+            }
         });
 
         ws.on('open', () => {
             console.log("WebSocket connected. Start sending audio...");
+            console.log("isLongPress:", isLongPress, "Timestamp:", Date.now());
             mic.start();
             const micInputStream = mic.getAudioStream();
-            send(micInputStream, ws, isLongPress);
+            send(micInputStream, ws, isLongPress, (err) => {
+                // send 函数中的错误回调
+                // 不立刻关闭连接，让ws自己处理
+                console.error("Send audio error - will wait for connection close:", err);
+                if (!settled) {
+                    settled = true;
+                    ListenClose();
+                    reject(err);
+                }
+            });
         });
-
-        // ws.on('message', (data) => {
-        //     const message = JSON.parse(data.toString());
-        //     if (message.header && message.header.code !== 0) {
-        //         console.error(`Error code: ${message.header.code}, message: ${message.header.message}`);
-        //         return;
-        //     }
-
-        //     if (message.payload && message.payload.result) {
-        //         const result = message.payload.result;
-        //         if (result.text) {
-        //             const decoded = Buffer.from(result.text, 'base64').toString('utf8');
-        //             const jsonRes = JSON.parse(decoded);
-        //             let text = "";
-        //             jsonRes.ws.forEach(wsItem => {
-        //                 wsItem.cw.forEach(cw => {
-        //                     text += cw.w;
-        //                 });
-        //             });
-        //             console.log("Intermediate result:", text);
-
-        //             // if (message.header.status !== 0 && text.length < last) {
-        //             //     res += last;
-        //             // }
-        //             // last = text;
-        //         }
-
-        //         if (result.status === 2) {
-        //             console.log("Final result received. Closing WebSocket.");
-        //             ws.close();
-        //         }
-        //     }
-        // });
-
-        // ws.on('close', () => {
-        //     // console.log("转换结果为：" + res);
-        //     console.log("WebSocket closed.");
-        //     return res;
-        // });
 
         ws.on('error', (err) => {
             console.error("WebSocket error:", err);
+            if (!settled) {
+                settled = true;
+                mic = null;
+                ws = null;
+                reject(err);
+            }
         });
-
     });
 }
 
 function ListenClose() {
-    if (mic !== null) mic.stop();
-    if (ws !== null) ws.close();
+    if (mic !== null) {
+        mic.stop();
+        mic = null;
+    }
+    if (ws !== null) {
+        ws.close();
+        ws = null;
+    }
 }
 
 function ListenCloseAfter5s() {
     setTimeout(() => {
-        if (mic !== null) mic.stop();
-        if (ws !== null) ws.close();
-    }, 10000);
+        ListenClose();
+    }, 5000);
 }
 
 // Begin(false);

@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const os = require('os');
 
 const { Listen, ListenClose } = require('./util/rtasr-ws-node.js');
 const { loadHistory, saveHistory, initHistory, getSession } = require('./util/historyStore');
@@ -58,15 +59,16 @@ function createBallWindow(x, y) {
     if (ballWin) return;
 
     ballWin = new BrowserWindow({
-        width: 50,
-        height: 50,
+        width: 100,
+        height: 100,
         x: x === null ? undefined : x,
         y: y === null ? undefined : y,
-        frame: false,
+        // frame: false,
         transparent: true,
         alwaysOnTop: true,
         resizable: false,
         skipTaskbar: true,
+        hasShadow: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true
@@ -76,7 +78,7 @@ function createBallWindow(x, y) {
     ballWin.loadFile('./src/ball.html');
     ballWin.on('closed', () => {
         ballWin = null;
-        mainWin?.webContents.send('ball-status', false);
+        // mainWin?.webContents?.send('ball-status', false);
     });
 }
 
@@ -149,7 +151,7 @@ async function getSudoPermission(content) {
     // 如果包含sudo命令，则向用户申请密码(仅需一次)，并返回；否则返回null
     if (containSudoCommand(content)) {
         try {
-            const password = await requestPermissionFromRenderer(mainWin.webContents, {
+            const password = await requestPermissionFromMainwindow(mainWin.webContents, {
                 type: 'sudo-password',
                 message: '执行此命令需要管理员密码'
             });
@@ -165,7 +167,7 @@ async function getSudoPermission(content) {
 async function getRunPermission(content) {
     // 显示用户确认执行 content 命令的窗口，返回用户的确认结果
     try {
-        const permission = await requestPermissionFromRenderer(mainWin.webContents, {
+        const permission = await requestPermissionFromMainwindow(mainWin.webContents, {
             type: 'run-confirmation',
             command: content,
             message: '确认是否执行此命令？'
@@ -186,7 +188,7 @@ const pendingRequests = new Map();
  * @param {Object} data 请求参数（如权限类型）
  * @returns {Promise}
  */
-function requestPermissionFromRenderer(webContents, data) {
+function requestPermissionFromMainwindow(webContents, data) {
     return new Promise((resolve, reject) => {
         const requestId = randomUUID(); // 生成唯一ID，确保并发不冲突
         
@@ -283,11 +285,12 @@ ipcMain.on('toggle-main-window', () => {
     if (!mainWin) return;
 
     if (mainWin.isVisible()) {
-        if (mainWin.isFocused()) {
-            mainWin.hide(); // 如果已经可见且聚焦，则隐藏
-        } else {
-            mainWin.focus(); // 如果可见但没聚焦，则聚焦到最前
-        }
+        mainWin.hide();
+        // if (mainWin.isFocused()) {
+        //     mainWin.hide(); // 如果已经可见且聚焦，则隐藏
+        // } else {
+        //     mainWin.focus(); // 如果可见但没聚焦，则聚焦到最前
+        // }
     } else {
         mainWin.show(); // 如果隐藏，则显示
     }
@@ -323,6 +326,29 @@ ipcMain.handle('terminal:run', async (event, command, sessionId) => {
     return result;
 });
 
+// 获取系统资源占用情况
+ipcMain.handle('get-system-stats', async (event) => {
+    try {
+        const cpus = os.cpus();
+        const totalMemory = os.totalmem();
+        const freeMemory = os.freemem();
+        const usedMemory = totalMemory - freeMemory;
+        const memoryPercent = Math.round((usedMemory / totalMemory) * 100);
+        
+        // 计算CPU使用率（简单方法：获取平均负载）
+        const loadavg = os.loadavg();
+        const cpuPercent = Math.round((loadavg[0] / cpus.length) * 100);
+        
+        return {
+            cpu: `${Math.min(cpuPercent, 100)}%`,
+            ram: `${memoryPercent}%`
+        };
+    } catch (error) {
+        console.error('获取系统信息失败:', error);
+        return { cpu: 'N/A', ram: 'N/A' };
+    }
+});
+
 ipcMain.handle('get-window-position', (event) => {
     if (!ballWin) return;
     const [x, y] = ballWin.getPosition()
@@ -344,31 +370,47 @@ ipcMain.on('close-ball', () => {
 });
 
 let listenProcessing = false;
+let currentListenPromise = null;
+
 // 长按悬浮球自动录音并处理
 ipcMain.on('quick-listen', async (event, data) => {
     if (data.isBegin) {
+        // 开始录音
         if (listenProcessing) return;
         listenProcessing = true;
         mainWin.webContents.send('update-status', { role: 'ai', content: '正在聆听...' });
         
-        // 1. ASR 识别
-        const text = await Listen(data.isLongPress); 
-        if (!text) return;
-        
-        mainWin.webContents.send('update-status', { role: 'user', content: text });
-
-        // 直接将用户输入的文本交由ai处理
-        await handleUserInput(text, sessionInfo.sessionId);
+        // 立即启动 Listen，不要等待
+        currentListenPromise = Listen(data.isLongPress);
     } else {
+        // 停止录音
+        if (!listenProcessing) return;
+        
         ListenClose();
-        listenProcessing = false;
+        
+        // 等待识别结果
+        try {
+            const text = await currentListenPromise;
+            if (!text) {
+                listenProcessing = false;
+                return;
+            }
+            
+            // 将识别结果填充到输入框
+            mainWin.webContents.send('update-status', { role: 'voice-input', content: text });
+        } catch (error) {
+            console.error('ASR 识别出错:', error);
+        } finally {
+            listenProcessing = false;
+            currentListenPromise = null;
+        }
     }
 });
 
 app.on('ready', () => {
     createMainWindow();
     // 为 ConsoleAssistant 注入权限请求函数（此时 mainWin 已创建）
-    consoleAssistant.setPermissionRequester((data) => requestPermissionFromRenderer(mainWin.webContents, data));
+    consoleAssistant.setPermissionRequester((data) => requestPermissionFromMainwindow(mainWin.webContents, data));
 });
 
 app.on('window-all-closed', () => {

@@ -16,11 +16,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendMessage: (msg) => ipcRenderer.invoke('chat:send', msg),
     getHistory: () => ipcRenderer.invoke('chat:getHistory'),
     runCommand: (cmd, sessionId) => ipcRenderer.invoke('terminal:run', cmd, sessionId),
-    onAiResponse: (callback) => ipcRenderer.on('chat:ai-response', (event, group) => callback(group)),
+    onAiResponse: (callback) => ipcRenderer.on('chat:ai-response', (_event, group) => callback(group)),
     // 监听主进程的权限请求
     onAskPermission: (callback) => ipcRenderer.on('ask-for-permission', (_event, value) => callback(value)),
     // 发送回复给主进程
     sendPermissionResponse: (response) => ipcRenderer.send('permission-response', response),
+    // 获取系统资源占用情况
+    getSystemStats: () => ipcRenderer.invoke('get-system-stats')
     
     // // 如果需要控制窗口移动或关闭，也可以暴露：
     //     moveWindow: (win, dx, dy) => {
