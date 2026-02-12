@@ -104,6 +104,30 @@
             position: relative;
             z-index: 2;
             transition: opacity 0.3s ease;
+            display: inline-block;
+        }
+
+        /* 太阳旋转与脉冲动画 */
+        #ball-icon.sun-icon {
+            animation: sun-spin 20s linear infinite, sun-pulse 3s ease-in-out infinite;
+        }
+
+        @keyframes sun-spin {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes sun-pulse {
+            0%, 100% {
+                filter: drop-shadow(0 0 0px rgba(255, 200, 0, 0.8));
+            }
+            50% {
+                filter: drop-shadow(0 0 8px rgba(255, 200, 0, 1));
+            }
         }
 
         @keyframes pulse {
@@ -383,6 +407,7 @@
             // 中午到下午：明亮太阳 + 偶尔的云朵
             ball.className = 'day';
             ballIcon.textContent = '☀️';
+            ballIcon.classList.add('sun-icon'); // 添加太阳动画类
             if (Math.random() > 0.5) {
                 cloudDeco.classList.add('show', 'float');
                 cloudDeco.textContent = '☁️';
@@ -483,7 +508,8 @@
         
         // 位移超过 5 像素判定为移动
         if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
-            if (!hasMoved) {
+            // 关键修改：只有在还未开始长按录音时才中断
+            if (!hasMoved && !isLongPressActive) {
                 hasMoved = true;
                 clearTimeout(longPressTimer); // 移动了，取消长按判定
                 console.log("检测到移动，取消长按判定");
@@ -551,44 +577,44 @@
         e.preventDefault();
         return false;
     });
+    
+    // // 禁用双击选择
+    // document.addEventListener('dblclick', (e) => {
+    //     if (e.target === ball || ball.contains(e.target)) {
+    //         e.preventDefault();
+    //         return false;
+    //     }
+    // }, { capture: true });
 
-    // 禁用双击选择
-    document.addEventListener('dblclick', (e) => {
-        if (e.target === ball || ball.contains(e.target)) {
-            e.preventDefault();
-            return false;
-        }
-    }, { capture: true });
+    // // 禁用拖动事件
+    // ball.addEventListener('dragstart', (e) => {
+    //     e.preventDefault();
+    //     return false;
+    // });
 
-    // 禁用拖动事件
-    ball.addEventListener('dragstart', (e) => {
-        e.preventDefault();
-        return false;
-    });
+    // // 禁用上下文菜单
+    // ball.addEventListener('contextmenu', (e) => {
+    //     e.preventDefault();
+    //     return false;
+    // });
 
-    // 禁用上下文菜单
-    ball.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        return false;
-    });
+    // // 禁用触摸选择
+    // document.addEventListener('touchmove', (e) => {
+    //     if (e.target === ball || ball.contains(e.target)) {
+    //         e.preventDefault();
+    //         return false;
+    //     }
+    // }, { passive: false });
 
-    // 禁用触摸选择
-    document.addEventListener('touchmove', (e) => {
-        if (e.target === ball || ball.contains(e.target)) {
-            e.preventDefault();
-            return false;
-        }
-    }, { passive: false });
-
-    // 禁用mouseup导致的选择
-    document.addEventListener('mouseup', (e) => {
-        if (e.target === ball || ball.contains(e.target)) {
-            // 清空任何可能的选择
-            if (window.getSelection) {
-                window.getSelection().removeAllRanges();
-            }
-        }
-    });
+    // // 禁用mouseup导致的选择
+    // document.addEventListener('mouseup', (e) => {
+    //     if (e.target === ball || ball.contains(e.target)) {
+    //         // 清空任何可能的选择
+    //         if (window.getSelection) {
+    //             window.getSelection().removeAllRanges();
+    //         }
+    //     }
+    // });
 </script>
 </body>
 </html>

@@ -11,8 +11,12 @@ const apiSecret = "Nzg3NTMyYjQ0NTFhZWNiOTViOGNjMTNk";
 const StatusFirstFrame = 0;
 const StatusContinueFrame = 1;
 const StatusLastFrame = 2;
-let mic = null;
-let ws = null;
+
+let currentSession = {
+    mic: null,
+    ws: null,
+    isOpening: false // 标记是否正在连接中
+};
 
 function getWsUrl(hostUrl, apiKey, apiSecret) {
     const urlObj = new URL(hostUrl);
@@ -30,9 +34,11 @@ function send(micInputStream, ws, isLongPress, onError) {
     let seq = 0;
     let status = StatusFirstFrame;
     let sendFailed = false;
+    let lastSendTime = Date.now();
+    const sendInterval = 40;  // 建议间隔 40ms
 
-    console.log("Mic opening")
-    // 非长按模式下10秒后自动关闭
+    console.log("Mic opening. Recommended interval: 40ms")
+    // 非长按模式下5秒后自动关闭
     if (!isLongPress) ListenCloseAfter5s();
     
     micInputStream.on('data', (chunk) => {
@@ -72,7 +78,22 @@ function send(micInputStream, ws, isLongPress, onError) {
         };
 
         try {
-            ws.send(JSON.stringify(payload));
+            // 控制发送间隔，避免过于频繁发送
+            const now = Date.now();
+            const timeSinceLastSend = now - lastSendTime;
+            
+            if (timeSinceLastSend < sendInterval) {
+                // 如果间隔太短，延迟发送
+                setTimeout(() => {
+                    if (!sendFailed && ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify(payload));
+                        lastSendTime = Date.now();
+                    }
+                }, sendInterval - timeSinceLastSend);
+            } else {
+                ws.send(JSON.stringify(payload));
+                lastSendTime = now;
+            }
         } catch (err) {
             console.error('WebSocket send error:', err);
             sendFailed = true;
@@ -119,12 +140,6 @@ function send(micInputStream, ws, isLongPress, onError) {
     });
 }
 
-let currentSession = {
-    mic: null,
-    ws: null,
-    isOpening: false // 标记是否正在连接中
-};
-
 async function Listen(isLongPress) {
     // 1. 如果已经在开启中或录音中，直接返回，防止并发冲突
     if (currentSession.isOpening || currentSession.mic) {
@@ -136,53 +151,131 @@ async function Listen(isLongPress) {
 
     return new Promise((resolve, reject) => {
         const wsUrl = getWsUrl(hostUrl, apiKey, apiSecret);
-        const ws = new WebSocket(wsUrl);
-        currentSession.ws = ws;
+        currentSession.ws = new WebSocket(wsUrl);
 
-        const micInstance = Mic({
+        currentSession.mic = Mic({
             rate: '16000',
             channels: '1',
             bitwidth: '16',
             encoding: 'signed-integer',
         });
-        currentSession.mic = micInstance;
 
         let finalResult = "";
 
-        ws.on('open', () => {
-            console.log("WebSocket connected.");
+        currentSession.ws.on('message', (data) => {
+            try {
+                const message = JSON.parse(data.toString());
+                
+                // 检查头部状态和错误码
+                if (message.header) {
+                    if (message.header.code !== 0) {
+                        console.warn(`[ASR] 服务器错误 (code: ${message.header.code}): ${message.header.message}`);
+                        return;
+                    }
+                    console.log(`[ASR] 响应 - status: ${message.header.status}, sid: ${message.header.sid}`);
+                }
+                
+                // 处理结果
+                if (message.payload && message.payload.result) {
+                    const result = message.payload.result;
+                    if (result.text) {
+                        const decoded = Buffer.from(result.text, 'base64').toString('utf8');
+                        const jsonRes = JSON.parse(decoded);
+                        let tempText = "";
+                        jsonRes.ws.forEach(wsItem => {
+                            wsItem.cw.forEach(cw => tempText += cw.w);
+                        });
+                        
+                        // 处理动态修正 (wpgs)
+                        const pgs = message.payload.result.pgs;
+                        if (pgs === "apd") {
+                            // 追加模式
+                            finalResult += tempText;
+                            console.log(`[ASR] (追加) "${tempText}"`);
+                        } else if (pgs === "rpl") {
+                            // 替换模式 - 需要根据 rg 范围替换
+                            finalResult += tempText;
+                            console.log(`[ASR] (替换 [${message.payload.result.rg.join(',')}]) "${tempText}"`);
+                        } else {
+                            // 普通模式
+                            if (result.status === 2) {
+                                // 最终结果
+                                finalResult += tempText;
+                                console.log(`[ASR] (最终) "${tempText}"`);
+                            } else {
+                                // 中间结果
+                                console.log(`[ASR] (中间) "${tempText}"`);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("[ASR] 消息解析错误:", err.message);
+            }
+        });
+
+        currentSession.ws.on('open', () => {
+            console.log("[ASR] WebSocket 连接成功");
+            console.log(`[ASR] 模式: ${isLongPress ? '长按录音' : '定时录音'}, 时间戳: ${Date.now()}`);
             currentSession.isOpening = false; // 连接成功
             
             // 检查：如果在连接期间，用户已经松开了手（触发了关闭）
             if (!currentSession.mic) {
-                ws.close();
+                console.log("[ASR] 连接期间麦克风已关闭，自动关闭连接");
+                currentSession.ws?.close();
                 return;
             }
 
-            micInstance.start();
-            const micInputStream = micInstance.getAudioStream();
-            send(micInputStream, ws, isLongPress);
+            console.log("[ASR] 启动麦克风并开始发送音频...");
+            currentSession.mic.start();
+            const micInputStream = currentSession.mic.getAudioStream();
+            send(micInputStream, currentSession.ws, isLongPress, (err) => {
+                // send 函数中的错误回调
+                console.error("[ASR] 音频发送错误:", err.message);
+                if (currentSession.ws && currentSession.ws.readyState === WebSocket.OPEN) {
+                    currentSession.ws.close();
+                }
+                reject(err);
+            });
         });
 
-        // ... 其余逻辑处理 finalResult 并 resolve ...
-        ws.on('close', () => {
+        currentSession.ws.on('close', () => {
+            console.log("[ASR] WebSocket 已关闭");
+            console.log(`[ASR] 识别结果: "${finalResult || '(无结果)'}"`);
             currentSession.mic = null;
             currentSession.ws = null;
-            resolve(finalResult);
+            currentSession.isOpening = false;
+            resolve(finalResult); // 返回最终识别的文本
+        });
+
+        currentSession.ws.on('error', (err) => {
+            console.error("[ASR] WebSocket 错误:", err.message);
+            currentSession.mic = null;
+            currentSession.ws = null;
+            currentSession.isOpening = false;
+            reject(err);
         });
     });
 }
 
 function ListenClose() {
-    console.log("Attempting to close mic...");
-    // 延迟极短时间处理，或者增加保护，确保 start 后再 stop
+    console.log("[ASR] 停止录音");
     if (currentSession.mic) {
-        currentSession.mic.stop();
+        try {
+            currentSession.mic.stop();
+        } catch (err) {
+            console.error("[ASR] 停止麦克风错误:", err.message);
+        }
         currentSession.mic = null;
     }
     if (currentSession.ws) {
-        // 如果 WebSocket 还在连接中，可能需要稍微等一下再关，或者直接切断
-        currentSession.ws.close();
+        try {
+            if (currentSession.ws.readyState === WebSocket.OPEN) {
+                currentSession.ws.close();
+            }
+        } catch (err) {
+            console.error("[ASR] 关闭 WebSocket 错误:", err.message);
+        }
         currentSession.ws = null;
     }
     currentSession.isOpening = false;

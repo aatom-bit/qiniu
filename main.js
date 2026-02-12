@@ -63,7 +63,7 @@ function createBallWindow(x, y) {
         height: 100,
         x: x === null ? undefined : x,
         y: y === null ? undefined : y,
-        // frame: false,
+        frame: false,
         transparent: true,
         alwaysOnTop: true,
         resizable: false,
