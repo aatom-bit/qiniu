@@ -37,13 +37,16 @@
         }
 
         .new-chat-btn {
-            padding: 15px;
-            margin: 10px;
-            background: #333;
+            padding: 12px;
+            margin: 5px 10px;
+            background: #2d2d2d;
+            color: #aaa;
             text-align: center;
+            border: 1px solid #444;
             border-radius: 4px;
             cursor: pointer;
-            transition: 0.3s;
+            font-size: 13px;
+            transition: 0.2s;
         }
 
         .new-chat-btn:hover {
@@ -56,18 +59,54 @@
         }
 
         .history-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             padding: 12px 15px;
             font-size: 13px;
             border-bottom: 1px solid #2d2d2d;
             cursor: pointer;
+            transition: 0.2s;
+        }
+        
+        .history-item:hover {
+            background: #2d2d2d;
+        }
+
+        .history-item-text {
+            flex: 1;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            cursor: pointer;
+        }
+        
+        .history-item-delete {
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 4px 8px;
+            margin-left: 8px;
+            border-radius: 3px;
+            transition: 0.2s;
+            opacity: 0;
+        }
+        
+        .history-item:hover .history-item-delete {
+            opacity: 1;
+        }
+        
+        .history-item-delete:hover {
+            background: #e74c3c;
+            color: #fff;
         }
 
         .history-item.active {
             background: #37373d;
             border-left: 3px solid #007acc;
+            padding-left: 12px;
         }
 
         /* 对话区 */
@@ -195,12 +234,14 @@
 
         /* 输入区 */
         .input-area {
+            min-width: 50px;
             padding: 20px;
             border-top: 1px solid #333;
             justify-content: center;
             /* 输入框居中 */
             display: flex;
             gap: 10px;
+            align-items: flex-end;
         }
 
         .input-wrapper {
@@ -239,6 +280,40 @@
             cursor: not-allowed;
         }
 
+        #asr-btn {
+            width: 50px;
+            height: 50px;
+            background: #555;
+            border: none;
+            color: white;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+        }
+
+        #asr-btn:hover:not(.recording) {
+            background: #666;
+        }
+
+        #asr-btn.recording {
+            background: #e74c3c;
+            animation: asr-pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes asr-pulse {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 0 10px rgba(231, 76, 60, 0);
+            }
+        }
+
         .action-btn {
             padding: 12px;
             margin: 5px 10px;
@@ -268,10 +343,10 @@
 
     <div class="app-container">
         <div class="sidebar">
-            <div class="new-chat-btn" id="new-chat-btn">+ 新对话</div>
             <!-- 显示/关闭悬浮球按钮 -->
             <div class="action-btn" id="toggle-ball-btn">显示悬浮球</div>
 
+            <div class="new-chat-btn" id="new-chat-btn">+ 新对话</div>
             <div class="history-list" id="history-list"></div>
         </div>
         <div class="main-chat">
@@ -280,6 +355,7 @@
                 <div class="input-wrapper">
                     <textarea id="user-input" placeholder="输入指令或提问..."></textarea>
                     <button id="send-btn">发送</button>
+                    <button id="asr-btn" title="语音输入">🎤</button>
                 </div>
             </div>
         </div>
@@ -314,8 +390,22 @@
             state.history.forEach((session, index) => {
                 const div = document.createElement('div');
                 div.className = `history-item ${state.currentSessionIndex === index ? 'active' : ''}`;
-                div.innerText = session.title || '新会话 ' + (index + 1);
-                div.onclick = () => switchSession(index);
+                
+                const textSpan = document.createElement('span');
+                textSpan.className = 'history-item-text';
+                textSpan.innerText = session.title || '新会话 ' + (index + 1);
+                textSpan.onclick = () => switchSession(index);
+                div.appendChild(textSpan);
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'history-item-delete';
+                deleteBtn.innerText = '✕';
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteSession(index);
+                };
+                div.appendChild(deleteBtn);
+                
                 historyListEl.appendChild(div);
             });
         }
@@ -405,6 +495,9 @@
             state.currentSessionIndex = 0;
             renderHistory();
             renderMessages();
+            
+            // 同步到main.js
+            window.electronAPI.createSession();
         }
 
         function switchSession(index) {
@@ -417,6 +510,35 @@
                 window.electronAPI.sessionSwitch(index);
             } else {
                 console.log(`index: ${index}, out of range!`);
+            }
+        }
+
+        async function deleteSession(index) {
+            if (index < 0 || index >= state.history.length) return;
+            
+            const session = state.history[index];
+            if (confirm(`确认删除会话: "${session.title || '新会话 ' + (index + 1)}"?`)) {
+                // 调用主进程删除
+                const result = await window.electronAPI.deleteSession(index);
+                
+                if (result.success) {
+                    // 本地删除
+                    state.history.splice(index, 1);
+                    
+                    // 调整当前会话索引
+                    if (state.currentSessionIndex >= state.history.length) {
+                        state.currentSessionIndex = Math.max(0, state.history.length - 1);
+                    }
+                    
+                    // 如果没有会话了，创建新的
+                    if (state.history.length === 0) {
+                        createNewChat();
+                    } else {
+                        renderHistory();
+                        renderMessages();
+                        window.electronAPI.sessionSwitch(state.currentSessionIndex);
+                    }
+                }
             }
         }
 
@@ -435,13 +557,50 @@
         sendBtn.onclick = send;
         userInput.onkeyup = (e) => { if (e.key === 'Enter') send(); };
 
+        // ASR 按钮事件处理 - 长按开始录音，松开停止
+        let asrPressTime = 0;
+        const asrBtn = document.getElementById('asr-btn');
+        
+        asrBtn.addEventListener('mousedown', () => {
+            asrPressTime = Date.now();
+            asrBtn.classList.add('recording');
+            asrBtn.textContent = '🔴';
+            // 开始录音
+            window.electronAPI.QuickListen(true, true);
+        });
+        
+        const endAsr = () => {
+            const pressDuration = Date.now() - asrPressTime;
+            asrBtn.classList.remove('recording');
+            asrBtn.textContent = '🎤';
+            
+            // 如果少于500ms，取消发送；否则停止并发送
+            if (pressDuration < 500) {
+                window.electronAPI.QuickListen(false, false); // 取消
+            } else {
+                window.electronAPI.QuickListen(true, false); // 停止并发送
+            }
+        };
+        
+        asrBtn.addEventListener('mouseup', endAsr);
+        asrBtn.addEventListener('mouseleave', endAsr);
+
+
         // 监听来自语音识别的结果并填入输入框
         window.electronAPI.onUpdateStatus((data) => {
             if (data.role === 'voice-input') {
-                // 语音识别结果填充到输入框
-                userInput.value = data.content;
+                // 语音识别结果追加到输入框（不清除原本内容）
+                const currentContent = userInput.value.trim();
+                if (currentContent) {
+                    userInput.value = currentContent + '\n' + data.content;
+                } else {
+                    userInput.value = data.content;
+                }
                 userInput.focus(); // 自动聚焦，便于用户编辑
-                // 不自动发送，让用户可以编辑后再发送
+                // 关闭 ASR 按钮的录音状态
+                if (asrBtn) {
+                    asrBtn.classList.remove('recording');
+                }
             } else if (data.role === 'ai') {
                 // 其他AI回复可以作为日志显示在控制台
                 console.log(data.content);

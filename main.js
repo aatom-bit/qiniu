@@ -59,11 +59,11 @@ function createBallWindow(x, y) {
     if (ballWin) return;
 
     ballWin = new BrowserWindow({
-        width: 100,
-        height: 100,
+        width: 150,
+        height: 150,
         x: x === null ? undefined : x,
         y: y === null ? undefined : y,
-        frame: false,
+        frame: false, // 测试时注释这里
         transparent: true,
         alwaysOnTop: true,
         resizable: false,
@@ -317,6 +317,24 @@ ipcMain.handle('chat:send', async (event, { text, sessionId, sessionCount }) => 
 // 获取历史
 ipcMain.handle('chat:getHistory', () => chatHistory);
 
+// 删除会话
+ipcMain.handle('chat:deleteSession', (event, sessionId) => {
+    if (sessionId >= 0 && sessionId < chatHistory.length) {
+        chatHistory.splice(sessionId, 1);
+        saveHistory(chatHistory);
+        return { success: true };
+    }
+    return { success: false };
+});
+
+// 创建新会话
+ipcMain.handle('chat:createSession', (event) => {
+    const newSession = { title: '新会话', messages: [] };
+    chatHistory.unshift(newSession);
+    saveHistory(chatHistory);
+    return { success: true, sessionId: 0 };
+});
+
 // 执行脚本
 ipcMain.handle('terminal:run', async (event, command, sessionId) => {
     console.log("正在执行脚本:", command);
@@ -382,8 +400,8 @@ ipcMain.on('quick-listen', async (event, data) => {
         
         // 立即启动 Listen，不要等待
         currentListenPromise = Listen(data.isLongPress);
-    } else {
-        // 停止录音
+    } else if (data.isLongPress) {
+        // 停止录音并发送识别
         if (!listenProcessing) return;
         
         ListenClose();
@@ -404,6 +422,13 @@ ipcMain.on('quick-listen', async (event, data) => {
             listenProcessing = false;
             currentListenPromise = null;
         }
+    } else {
+        // 取消录音（少于500ms）
+        if (!listenProcessing) return;
+        
+        ListenClose();
+        listenProcessing = false;
+        currentListenPromise = null;
     }
 });
 

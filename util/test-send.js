@@ -165,7 +165,7 @@ async function testSendWithFile(filePath) {
                     if (code !== 0) {
                         console.warn(`⚠ 错误代码 ${code}`);
                         if (code === 11201) {
-                            console.log(`💡 请检查讯飞控制台使用配额`);
+                            console.log(`💡 请检查讯飞控制台, 确认使用配额`);
                         }
                     }
                 }

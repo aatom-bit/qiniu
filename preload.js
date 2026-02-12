@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sessionSwitch: (sessionId) => ipcRenderer.invoke('chat:session-switch', sessionId),
     sendMessage: (msg) => ipcRenderer.invoke('chat:send', msg),
     getHistory: () => ipcRenderer.invoke('chat:getHistory'),
+    createSession: () => ipcRenderer.invoke('chat:createSession'),
+    deleteSession: (sessionId) => ipcRenderer.invoke('chat:deleteSession', sessionId),
     runCommand: (cmd, sessionId) => ipcRenderer.invoke('terminal:run', cmd, sessionId),
     onAiResponse: (callback) => ipcRenderer.on('chat:ai-response', (_event, group) => callback(group)),
     // 监听主进程的权限请求

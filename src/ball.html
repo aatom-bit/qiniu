@@ -220,59 +220,70 @@
             height: 100%;
             top: 0;
             left: 0;
-            border-radius: 50%;
-            overflow: hidden;
-            z-index: 1;
             pointer-events: none;
+            z-index: 0;
         }
 
         .decoration {
             position: absolute;
-            font-size: 18px;
             opacity: 0;
             transition: opacity 0.3s ease;
             z-index: 1;
+            visibility: hidden;
         }
 
         .decoration.show {
-            opacity: 0.7;
+            opacity: 0.8;
+            visibility: visible;
         }
 
-        /* 云朵装饰 */
+        /* 云朵装饰 - 一半在球内，一半在球外，不受float动画影响 */
         .cloud {
-            top: 10px;
-            left: 45%;
-            transform: translateX(-50%);
+            font-size: 30px;
+            top: 22px;
+            left: 70%;
+            margin-left: -18px;
+            z-index: 2;
+            /* 防止float和其他动画覆盖定位 */
+        }
+        
+        .cloud.float {
+            animation: none !important;
         }
 
-        /* 星星装饰 */
+        /* 星星装饰 - 一半在球内，一半在球外 */
         @keyframes twinkle {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 0.8; }
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 0.9; }
         }
 
         .star {
+            font-size: 24px;
+            z-index: 0;
+        }
+        
+        .star.show {
             animation: twinkle 2s infinite;
         }
 
         .star-1 {
-            top: 8%;
-            left: 10%;
+            top: 8px;
+            left: 8px;
         }
 
         .star-2 {
-            top: 8%;
-            right: 10%;
+            top: 8px;
+            right: 8px;
         }
 
         .star-3 {
-            bottom: 8%;
-            left: 10%;
+            bottom: 8px;
+            left: 8px;
         }
 
         .star-4 {
-            bottom: 8%;
-            right: 10%;
+            bottom: 8px;
+            right: 8px;
         }
 
         /* 月光光晕 */
@@ -314,17 +325,17 @@
 <body>
 <div id="ball-container" draggable="false">
     <div id="ball" draggable="false" style="image-rendering: pixelated; touch-action: none;">
-        <div id="decorations">
-            <div class="decoration cloud" id="cloud">☁️</div>
-            <div class="decoration star star-1" id="star-1">⭐</div>
-            <div class="decoration star star-2" id="star-2">✨</div>
-            <div class="decoration star star-3" id="star-3">⭐</div>
-            <div class="decoration star star-4" id="star-4">✨</div>
-        </div>
         <div id="ball-icon">☀️</div>
         <div id="stats">CPU RAM</div>
     </div>
     <div id="ripple"></div>
+    <div id="decorations">
+        <div class="decoration cloud" id="cloud">☁️</div>
+        <div class="decoration star star-1" id="star-1">⭐</div>
+        <div class="decoration star star-2" id="star-2">✨</div>
+        <div class="decoration star star-3" id="star-3">⭐</div>
+        <div class="decoration star star-4" id="star-4">✨</div>
+    </div>
 </div>
 
 <script type="module">
@@ -333,8 +344,7 @@
     const statsDiv = document.getElementById('stats');
     const ripple = document.getElementById('ripple');
     const cloudDeco = document.getElementById('cloud');
-    const starDecos = [document.getElementById('star-1'), document.getElementById('star-2'), 
-                       document.getElementById('star-3'), document.getElementById('star-4')];
+    const starDecos = [document.getElementById('star-2')]; // 只留一个✨装饰
     
     let isBegin = false;
     let isLongPressActive = false; 
@@ -392,6 +402,7 @@
     // 获取时间段并更新外观及装饰
     const updateTimeTheme = () => {
         const hour = new Date().getHours();
+        // const hour = 21; // 测试用固定时间
         
         // 隐藏所有装饰
         cloudDeco.classList.remove('show', 'float');
@@ -404,14 +415,12 @@
             cloudDeco.classList.add('show', 'float');
             cloudDeco.textContent = '☁️';
         } else if (hour >= 12 && hour < 17) {
-            // 中午到下午：明亮太阳 + 偶尔的云朵
+            // 中午到下午：明亮太阳 + 云朵
             ball.className = 'day';
             ballIcon.textContent = '☀️';
             ballIcon.classList.add('sun-icon'); // 添加太阳动画类
-            if (Math.random() > 0.5) {
-                cloudDeco.classList.add('show', 'float');
-                cloudDeco.textContent = '☁️';
-            }
+            cloudDeco.classList.add('show', 'float');
+            cloudDeco.textContent = '☁️';
         } else if (hour >= 17 && hour < 20) {
             // 傍晚：落日 + 云朵
             ball.className = 'dusk';
@@ -423,7 +432,7 @@
             ball.className = 'night';
             ballIcon.textContent = hour >= 20 && hour < 23 ? '🌙' : '⭐';
             cloudDeco.classList.add('show');
-            cloudDeco.textContent = '🌙';
+            cloudDeco.textContent = '☁️';
             starDecos.forEach(star => star.classList.add('show'));
         }
     };
@@ -441,6 +450,10 @@
     };
 
     // 初始化和定时更新
+    // 初始时隐藏所有装饰
+    cloudDeco.classList.remove('show', 'float');
+    starDecos.forEach(star => star.classList.remove('show'));
+    
     updateTimeTheme();
     updateStats();
     setInterval(updateTimeTheme, 60000); // 每分钟更新一次主题
@@ -453,11 +466,8 @@
         
         if (type === 'recording') {
             ball.classList.add('recording');
-            cloudDeco.classList.remove('show');
             starDecos.forEach(star => star.classList.remove('show'));
         } else if (type === 'active') {
-            ball.classList.add('active');
-            cloudDeco.classList.remove('show');
             starDecos.forEach(star => star.classList.remove('show'));
         } else {
             updateTimeTheme(); // 恢复时间主题
@@ -532,21 +542,16 @@
         if (isLongPressActive) {
             // 录音最短时间限制 500ms
             if (clickDuration >= 500) {
-                console.log("长按结束：停止录音，按压时长:", clickDuration, "ms");
+                console.log("长按结束：停止录音，按压时长 ", clickDuration, "ms");
                 window.electronAPI.QuickListen(true, false);
                 isLongPressActive = false;
                 setBallState(isBegin ? 'active' : 'default');
             } else {
-                console.log("长按时间过短 " + clickDuration + "ms，继续录音直到 500ms");
-                // 继续等待直到达到 500ms
-                setTimeout(() => {
-                    if (isLongPressActive) {
-                        console.log("最短时间达到，停止录音");
-                        window.electronAPI.QuickListen(true, false);
-                        isLongPressActive = false;
-                        setBallState(isBegin ? 'active' : 'default');
-                    }
-                }, 500 - clickDuration);
+                console.log("长按时间过短 " + clickDuration + "ms，取消录音");
+                // 直接取消，不发送
+                window.electronAPI.QuickListen(false, false); // 取消
+                isLongPressActive = false;
+                setBallState(isBegin ? 'active' : 'default');
             }
         } 
         else if (!hasMoved && clickDuration < 200) {
