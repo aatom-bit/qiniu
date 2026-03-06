@@ -24,7 +24,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // 发送回复给主进程
     sendPermissionResponse: (response) => ipcRenderer.send('permission-response', response),
     // 获取系统资源占用情况
-    getSystemStats: () => ipcRenderer.invoke('get-system-stats')
+    getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
+    // 包管理接口
+    getPkgManagerName: () => ipcRenderer.invoke('pkg:getManagerName'),
+    getInstalledPkgs: () => ipcRenderer.invoke('pkg:getInstalled'),
+    searchPkgs: (query) => ipcRenderer.invoke('pkg:search', query),
+    getPkgInfo: (name) => ipcRenderer.invoke('pkg:getInfo', name),
+    installPkg: (name) => ipcRenderer.invoke('pkg:install', name),
+    removePkg: (name) => ipcRenderer.invoke('pkg:remove', name),
     
     // // 如果需要控制窗口移动或关闭，也可以暴露：
     //     moveWindow: (win, dx, dy) => {

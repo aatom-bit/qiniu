@@ -3,6 +3,10 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const os = require('os');
 
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
+
 const { Listen, ListenClose } = require('./util/rtasr-ws-node.js');
 const { loadHistory, saveHistory, initHistory, getSession } = require('./util/historyStore');
 const { containSudoCommand } = require('./AdvancedTerminal.js');
@@ -136,7 +140,7 @@ function getAiDecision(content) {
     if (intentRegex.test(input) && (systemEntityRegex.test(input) || actionRegex.test(input))) {
         return 'command';
     }
-    
+
     // F. 特殊匹配：动作词 + 英文/数字名（处理不在词库里的软件包，如：运行 nginx）
     // 匹配中文动词后面跟着英文单词的模式
     const actionAndUnknownEntity = new RegExp(`${actionRegex.source}[a-z0-9\\s]+`, 'i');
@@ -191,7 +195,7 @@ const pendingRequests = new Map();
 function requestPermissionFromMainwindow(webContents, data) {
     return new Promise((resolve, reject) => {
         const requestId = randomUUID(); // 生成唯一ID，确保并发不冲突
-        
+
         // 1. 存入 Map
         pendingRequests.set(requestId, { resolve, reject });
 
@@ -208,6 +212,130 @@ function requestPermissionFromMainwindow(webContents, data) {
     });
 }
 
+// --- 系统适配逻辑 ---
+let sysInfo = {
+    flavor: 'debian', // 默认 debian
+    commands: {}
+};
+
+// 定义不同系统的命令模板
+const PkgConfigs = {
+    debian: {
+        list: "dpkg-query -W -f='${Package}|${Version}|${Description}\n'",
+        search: (q) => `apt-cache search "${q}" | head -n 100`,
+        info: (n) => `apt-cache show ${n}`,
+        install: (n) => `sudo apt-get install -y ${n}`,
+        remove: (n) => `sudo apt-get remove -y ${n}`,
+        parseList: (line) => {
+            const [name, version, desc] = line.split('|');
+            return { name, version, description: desc?.split('\n')[0] };
+        }
+    },
+    redhat: {
+        list: "rpm -qa --queryformat '%{NAME}|%{VERSION}|%{SUMMARY}\n'",
+        search: (q) => `dnf search "${q}" | grep ":" | head -n 100`, // dnf 或 yum
+        info: (n) => `dnf info ${n}`,
+        install: (n) => `sudo dnf install -y ${n}`,
+        remove: (n) => `sudo dnf remove -y ${n}`,
+        parseList: (line) => {
+            const [name, version, desc] = line.split('|');
+            return { name, version, description: desc };
+        }
+    },
+    arch: {
+        list: "pacman -Q",
+        search: (q) => `pacman -Ss "${q}" | grep "^[a-z]" | head -n 100`,
+        info: (n) => `pacman -Si ${n}`,
+        install: (n) => `sudo pacman -S --noconfirm ${n}`,
+        remove: (n) => `sudo pacman -R --noconfirm ${n}`,
+        parseList: (line) => {
+            const parts = line.split(' ');
+            return { name: parts[0], version: parts[1], description: 'Arch Package' };
+        }
+    }
+};
+
+// 自动检测系统发行版
+async function detectDistro() {
+    try {
+        const { stdout } = await execPromise('cat /etc/os-release');
+        if (/ID(_LIKE)?=.*(ubuntu|debian)/i.test(stdout)) {
+            sysInfo.flavor = 'debian';
+        } else if (/ID(_LIKE)?=.*(centos|fedora|rhel)/i.test(stdout)) {
+            sysInfo.flavor = 'redhat';
+        } else if (/ID(_LIKE)?=.*(arch)/i.test(stdout)) {
+            sysInfo.flavor = 'arch';
+        }
+        sysInfo.commands = PkgConfigs[sysInfo.flavor];
+        console.log(`检测到系统类型: ${sysInfo.flavor}`);
+    } catch (e) {
+        console.error('无法确定发行版，默认使用 Debian 模式');
+        sysInfo.commands = PkgConfigs['debian'];
+    }
+}
+
+ipcMain.handle('pkg:getInstalled', async () => {
+    try {
+        const { stdout } = await execPromise(sysInfo.commands.list);
+        if (!stdout) return [];
+
+        const rawLines = stdout.trim().split('\n');
+
+        // 过滤掉空对象
+        const allParsed = rawLines
+            .map(line => sysInfo.commands.parseList(line))
+            .filter(pkg => pkg && pkg.name);
+
+        // 使用 Map 进行去重
+        const uniqueMap = new Map();
+        for (const pkg of allParsed) {
+            // 如果 Map 中还没有这个包，则添加
+            // 这样如果是多架构包（如 libc6 和 libc6:i386），只会保留第一个出现的
+            if (!uniqueMap.has(pkg.name)) {
+                uniqueMap.set(pkg.name, pkg);
+            }
+        }
+        return Array.from(uniqueMap.values())
+            .sort((a, b) => a.name.localeCompare(b.name));
+            
+    } catch (error) {
+        console.error('获取安装包列表异常:', error);
+        return [];
+    }
+});
+
+ipcMain.handle('pkg:search', async (event, query) => {
+    try {
+        const { stdout } = await execPromise(sysInfo.commands.search(query));
+        // 简单的通用解析：由于搜索输出格式各异，这里进行模糊处理
+        return stdout.trim().split('\n').map(line => {
+            const name = line.split(/[ \/]/)[0]; // 取第一个单词或斜杠前的部分
+            return { name, description: line };
+        });
+    } catch (error) { return []; }
+});
+
+ipcMain.handle('pkg:getInfo', async (event, pkgName) => {
+    try {
+        const { stdout } = await execPromise(sysInfo.commands.info(pkgName));
+        return stdout;
+    } catch (error) { return "无法获取详情"; }
+});
+
+ipcMain.handle('pkg:install', async (event, pkgName) => {
+    return sysInfo.commands.install(pkgName);
+});
+
+ipcMain.handle('pkg:remove', async (event, pkgName) => {
+    return sysInfo.commands.remove(pkgName);
+});
+
+// 提供给前端显示当前使用的是哪个包管理器
+ipcMain.handle('pkg:getManagerName', () => {
+    const managers = { debian: 'APT (dpkg)', redhat: 'DNF (rpm)', arch: 'Pacman' };
+    return managers[sysInfo.flavor];
+});
+
 // 监听渲染进程的回执
 ipcMain.on('permission-response', (event, { requestId, result }) => {
     const request = pendingRequests.get(requestId);
@@ -220,7 +348,7 @@ ipcMain.on('permission-response', (event, { requestId, result }) => {
 async function handleUserInput(content, sessionId, sessionCount = -1) {
     const decision = getAiDecision(content); // 之前写的意图识别函数
     const session = getSession(chatHistory, sessionId, true, sessionCount);
-    
+
     // 1. 先把用户的提问存入历史记录
     session.messages.push({ role: 'user', content: content });
 
@@ -255,17 +383,17 @@ async function handleUserInput(content, sessionId, sessionCount = -1) {
 
     // 5. 通知前端更新（两种方式：通过 IPC 发送，或通过 handle 的返回值）
     // 这里直接发送，让前端逻辑更统一
-    mainWin.webContents.send('chat:ai-response', { 
-        role: 'assistant', 
+    mainWin.webContents.send('chat:ai-response', {
+        role: 'assistant',
         content: aiFinalContent,
-        sessionId: sessionId 
+        sessionId: sessionId
     });
 
     return aiFinalContent;
 }
 
 function onCommandFinished(isCompelted, consoleNum) {
-    return `任务 ${ isCompelted ? '已完成' : '执行失败'}`;
+    return `任务 ${isCompelted ? '已完成' : '执行失败'}`;
 }
 consoleAssistant.taskCompleteCallbackAddlistener(onCommandFinished.bind(this));
 
@@ -352,11 +480,11 @@ ipcMain.handle('get-system-stats', async (event) => {
         const freeMemory = os.freemem();
         const usedMemory = totalMemory - freeMemory;
         const memoryPercent = Math.round((usedMemory / totalMemory) * 100);
-        
+
         // 计算CPU使用率（简单方法：获取平均负载）
         const loadavg = os.loadavg();
         const cpuPercent = Math.round((loadavg[0] / cpus.length) * 100);
-        
+
         return {
             cpu: `${Math.min(cpuPercent, 100)}%`,
             ram: `${memoryPercent}%`
@@ -397,15 +525,15 @@ ipcMain.on('quick-listen', async (event, data) => {
         if (listenProcessing) return;
         listenProcessing = true;
         mainWin.webContents.send('update-status', { role: 'ai', content: '正在聆听...' });
-        
+
         // 立即启动 Listen，不要等待
         currentListenPromise = Listen(data.isLongPress);
     } else if (data.isLongPress) {
         // 停止录音并发送识别
         if (!listenProcessing) return;
-        
+
         ListenClose();
-        
+
         // 等待识别结果
         try {
             const text = await currentListenPromise;
@@ -413,7 +541,7 @@ ipcMain.on('quick-listen', async (event, data) => {
                 listenProcessing = false;
                 return;
             }
-            
+
             // 将识别结果填充到输入框
             mainWin.webContents.send('update-status', { role: 'voice-input', content: text });
         } catch (error) {
@@ -425,14 +553,16 @@ ipcMain.on('quick-listen', async (event, data) => {
     } else {
         // 取消录音（少于500ms）
         if (!listenProcessing) return;
-        
+
         ListenClose();
         listenProcessing = false;
         currentListenPromise = null;
     }
 });
 
+// 渲染窗口
 app.on('ready', () => {
+    detectDistro(); //检测发行版本
     createMainWindow();
     // 为 ConsoleAssistant 注入权限请求函数（此时 mainWin 已创建）
     consoleAssistant.setPermissionRequester((data) => requestPermissionFromMainwindow(mainWin.webContents, data));

@@ -22,44 +22,44 @@ function parseCommands(commands) {
     if (!commands || typeof commands !== 'string') {
         return [];
     }
-    
+
     const lines = [];
     let currentLine = '';
     let inSingleQuote = false;
     let inDoubleQuote = false;
     let escapeNext = false;
-    
+
     for (let i = 0; i < commands.length; i++) {
         const char = commands[i];
-        
+
         if (escapeNext) {
             // 处理转义字符
             currentLine += char;
             escapeNext = false;
             continue;
         }
-        
+
         switch (char) {
             case '\\':
                 // 转义字符，下一个字符按字面意思处理
                 escapeNext = true;
                 currentLine += char;
                 break;
-                
+
             case "'":
                 if (!inDoubleQuote) {
                     inSingleQuote = !inSingleQuote;
                 }
                 currentLine += char;
                 break;
-                
+
             case '"':
                 if (!inSingleQuote) {
                     inDoubleQuote = !inDoubleQuote;
                 }
                 currentLine += char;
                 break;
-                
+
             case '\n':
                 if (inSingleQuote || inDoubleQuote) {
                     // 在引号内的换行符，作为命令的一部分
@@ -72,41 +72,47 @@ function parseCommands(commands) {
                     currentLine = '';
                 }
                 break;
-                
+
             case '\r':
                 // 忽略回车符，等待换行符
                 break;
-                
+
             default:
                 currentLine += char;
                 break;
         }
     }
-    
+
     // 处理最后一行
     if (currentLine.trim() !== '') {
         lines.push(currentLine.trim());
     }
-    
+
     return lines;
 }
 
-class AdvancedTerminal extends EventEmitter{
-    constructor(getPasswordEvent) {
+function maskSensitiveInfo(text) {
+    if (!text) return "";
+    // 匹配 [sudo] password... 直到该行结束
+    return text.replace(/([Pp]assword.*:|[密码]*：)[^\r\n]*/g, '$1 ************');
+}
+class AdvancedTerminal extends EventEmitter {
+    constructor(getPasswordEvent = null) {
         super();
         this.activeProcessId = null;
         this.processes = new Map();
         this.processDoneCallbacks = []; // 命令执行完成回调
         this.processErrorCallbacks = []; // 命令错误回调
         this.history = [];
-        this.ANSI_REGEX = /\u001b\[[0-9;]*[mGJKHF]/g;
+        this.ANSI_REGEX = /[\u001b\u009b]\[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-a-zA-Z]/g;
+        this.preFilledPassword = null; // 预存密码
+        this.lastSentPassword = null; // 记录最后一次发送的密码用于过滤
         this.setupReadline();
         this.showWelcome();
 
         this.getPasswordFromExternal = getPasswordEvent; // 读取密码的接口、
-
         // WARN: 在其他窗口获取密码时设为false
-        this.getPasswordFromConsole = false;
+        this.getPasswordFromConsole = this.getPasswordFromExternal === null; // 是否使用控制台输入方式获取密码
     }
 
     setupReadline() {
@@ -121,7 +127,7 @@ class AdvancedTerminal extends EventEmitter{
         this.rl.on('close', () => this.cleanup());
     }
 
-    getPrompt() {    
+    getPrompt() {
         if (this.activeProcessId) {
             if (!this.processes.get(this.activeProcessId).userInputEnabled) {
                 return '⏳ 进程执行中... ';
@@ -169,7 +175,7 @@ class AdvancedTerminal extends EventEmitter{
 
     async handleInput(input) {
         const command = input.trim();
-        
+
         if (!command) {
             this.rl.prompt();
             return;
@@ -184,39 +190,36 @@ class AdvancedTerminal extends EventEmitter{
     async processCommand(command) {
         const args = command.split(' ');
         const mainCommand = args[0].toLowerCase();
-        
+
         switch (mainCommand) {
-        case 'exit':
-            this.cleanup();
-            return;
-        case 'ps':
-            this.listProcesses();
-            return;
-        case 'clear':
-            console.clear();
-            this.showWelcome();
-            return;
-        case 'use':
-            this.switchProcess(args[1]);
-            return;
-        case 'kill':
-            this.killProcess(args[1]);
-            return;
-        default:
-            await this.executeCommand(command);
+            case 'exit':
+                this.cleanup();
+                return;
+            case 'ps':
+                this.listProcesses();
+                return;
+            case 'clear':
+                console.clear();
+                this.showWelcome();
+                return;
+            case 'use':
+                this.switchProcess(args[1]);
+                return;
+            case 'kill':
+                this.killProcess(args[1]);
+                return;
+            default:
+                await this.executeCommand(command);
         }
     }
 
     // 执行命令, 建议使用这个api
-    async executeCommand(command, processId = null) {
+    async executeCommand(command, processId = null, prePassword = null) {
         console.log(`executeCommand: processId is ${processId}`);
+
+        this.preFilledPassword = prePassword;
         try {
             if (processId) {
-                // 如果当前运行的id就是指定进程id时
-                if (this.activeProcessId === processId) {
-                    return await this.executeInActiveProcess(command);
-                }
-
                 let processInfo = this.processes.get(processId);
                 if (processInfo) {
                     // 已经存在目标进程id
@@ -237,8 +240,7 @@ class AdvancedTerminal extends EventEmitter{
     }
 
     // 在指定进程中执行命令
-    // 在指定进程中执行命令
-    executeInProcess = async (processId, command, forceDrive = false) => {
+    executeInProcess = async (command, processId, forceDrive = false) => {
         command = command.trim();
         if (!command) {
             return;
@@ -262,7 +264,7 @@ class AdvancedTerminal extends EventEmitter{
         // 如果用户输入被禁用，将命令加入队列
         if (!(forceDrive || procInfo.userInputEnabled)) {
             procInfo.pendingCommands.push(command);
-            console.log(`⏸️  命令已加入队列，当前队列: ${procInfo.pendingCommands.length}`); 
+            console.log(`⏸️  命令已加入队列，当前队列: ${procInfo.pendingCommands.length}`);
             return;
         }
 
@@ -279,10 +281,10 @@ class AdvancedTerminal extends EventEmitter{
         // 如果是sudo命令且尚未验证权限，预先获取权限
         if (hasSudoCommand && !procInfo.allow) {
             console.log(`🔐 检测到sudo命令，预先获取权限: ${command}`);
-            
+
             try {
                 const password = await this.fetchPassword(`进程 ${processId} 需要sudo权限执行: ${command}`);
-                
+
                 if (password) {
                     procInfo.allow = true;
                     console.log('✅ 已获取sudo权限');
@@ -299,7 +301,7 @@ class AdvancedTerminal extends EventEmitter{
         // 检查权限（包括非sudo命令的情况）
         if (hasSudoCommand && !procInfo.allow) {
             console.log(`❌ 未获取命令权限，已阻止命令`);
-            return; 
+            return;
         }
 
         console.log(`🔧 [${processId}] 执行: ${command}`);
@@ -309,23 +311,38 @@ class AdvancedTerminal extends EventEmitter{
 
         // 存储当前命令用于完成提醒
         procInfo.lastCommand = command;
-        
+
         // 重置状态
         procInfo.expectingCommandOutput = true;
         procInfo.commandComplete = false;
-        
+
         // 向进程发送命令
         if (procInfo.pty) {
             procInfo.process.write(command + '\r\n');
         } else {
             procInfo.process.stdin.write(command + '\n');
         }
-        
+
         // 刷新记录
         procInfo.processesOutput = '';
 
         // 等待命令完成
         return new Promise((resolve) => {
+            let silenceTimer = null;
+            const resetSilenceTimer = () => {
+                if (silenceTimer) clearTimeout(silenceTimer);
+                silenceTimer = setTimeout(() => {
+                    console.log("⚠️ 检测到长时间静默，尝试强制收尾...");
+                    onComplete({ status: 'completed', output: procInfo.processesOutput });
+                }, 60000); // 60秒静默
+            };
+
+            const cleanup = () => {
+                clearTimeout(timeoutId);
+                if (silenceTimer) clearTimeout(silenceTimer);
+                procInfo.removeListener('command_complete', onComplete);
+            };
+
             const timeoutId = setTimeout(() => {
                 procInfo.removeListener('command_complete', onComplete);
                 console.log('\n⏰ 命令执行超时，但进程仍在运行');
@@ -337,21 +354,23 @@ class AdvancedTerminal extends EventEmitter{
                 clearTimeout(timeoutId);
                 const output = result.output || '';
                 const exitCode = result.exitCode || 0;
-                
+
                 // 确保触发完成通知
                 this.notifyCommandCompletion(processId, procInfo, command, 'completed');
                 resolve({ status: 'completed', output, exitCode });
             };
 
             procInfo.once('command_complete', onComplete);
+            // 启动静默检测
+            resetSilenceTimer();
         });
     }
 
     // 在活跃进程中执行命令
     async executeInActiveProcess(command) {
-        return this.executeInProcess(this.activeProcessId, command);
+        return this.executeInProcess(command, this.activeProcessId);
     }
-    
+
     // 创建新进程执行命令
     async createNewProcess(command, processId_ = null) {
         command = command.trim();
@@ -371,10 +390,10 @@ class AdvancedTerminal extends EventEmitter{
         // console.log(` ${JSON.stringify(ptyProcess)}`);
         // 初始化进程信息
         const procInfo = this.initializeProcessInfo(ptyProcess, command, processId);
-        
+
         // 设置事件监听器
         this.setupPtyEventListeners(ptyProcess, procInfo, processId, command);
-        
+
         // 设置为活跃进程
         this.activeProcessId = processId;
         this.updatePrompt();
@@ -393,7 +412,7 @@ class AdvancedTerminal extends EventEmitter{
                 clearTimeout(timeoutId);
                 const output = result.output || '';
                 const exitCode = result.exitCode || 0;
-                
+
                 // 触发完成通知
                 this.notifyCommandCompletion(processId, procInfo, command, 'completed');
                 resolve({ status: 'completed', output, exitCode });
@@ -426,7 +445,7 @@ class AdvancedTerminal extends EventEmitter{
         ];
 
         const isMatch = promptPatterns.some(pattern => pattern.test(lastLine));
-        
+
         // 调试日志：如果没匹配上，看看最后一行到底长什么样
         if (!isMatch && lastLine.length > 0) {
             // console.log(`DEBUG: Last line content: "${lastLine}" (No match)`);
@@ -463,7 +482,7 @@ class AdvancedTerminal extends EventEmitter{
         procInfo.commandComplete = true;
 
         console.log(`\n🎯 进程执行完成 (退出码: ${exitCode})`);
-        
+
         procInfo.emit('command_complete', {
             output: outputBuffer,
             exitCode: exitCode
@@ -483,11 +502,11 @@ class AdvancedTerminal extends EventEmitter{
             console.log(`⚠️ 命令已完成，跳过重复触发`);
             return;
         }
-        
+
         console.log(`🔄 设置命令完成状态`);
         procInfo.commandComplete = true;
         procInfo.expectingCommandOutput = false;
-        
+
         setTimeout(() => {
             console.log(`🎯 命令执行完成，重新启用用户输入`);
             // 传递完整的完成信息
@@ -500,6 +519,30 @@ class AdvancedTerminal extends EventEmitter{
         }, 100);
     }
 
+    filterSensitiveData(data, procInfo) {
+        if (!data) return "";
+
+        let filtered = data;
+
+        if (this.lastSentPassword && this.lastSentPassword.length > 0) {
+            try {
+                // 转义密码中的特殊字符
+                const escapedPw = this.lastSentPassword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const pwRegex = new RegExp(escapedPw, 'g');
+                if (pwRegex.test(filtered)) {
+                    filtered = filtered.replace(pwRegex, "********");
+                    this.lastSentPassword = null; // 成功拦截后清除
+                }
+            } catch (e) {
+                console.error("过滤正则错误:", e);
+            }
+        }
+
+        // 移除 [?2004h (括号粘贴) 等系统指令，但不要误删 \r \n
+        filtered = filtered.replace(/\x1B\[\?[0-9;]*[hl]/g, '');
+
+        return filtered;
+    }
 
     generateConfirmationResponse(data) {
         if (data.includes('[Y/n]')) {
@@ -516,7 +559,7 @@ class AdvancedTerminal extends EventEmitter{
     async handleConfirmationPrompt(ptyProcess, procInfo, data) {
         procInfo.isWaitingForConfirmation = true;
         console.log('\n🤔 检测到交互式确认提示，自动选择继续...');
-        
+
         return new Promise((resolve) => {
             setTimeout(() => {
                 if (procInfo.status !== 'running') {
@@ -524,81 +567,106 @@ class AdvancedTerminal extends EventEmitter{
                     resolve();
                     return;
                 }
-                
+
                 const response = this.generateConfirmationResponse(data);
                 ptyProcess.write(response.command);
                 console.log(response.message);
-                
+
                 procInfo.isWaitingForConfirmation = false;
-                
+
                 // 确认后等待命令完成
                 setTimeout(() => {
                     this.setUserInputEnabled(procInfo.processId, true);
                     resolve();
                 }, 2000);
-                
+
             }, 1000);
         });
     }
 
     handlePasswordError(procInfo) {
+        this.preFilledPassword = null; // 清除预填充密码，防止重复使用错误密码
         console.log('\n❌ 密码错误，请重新获取密码');
         procInfo.isWaitingForPassword = true;
     }
 
     async handlePasswordPrompt(ptyProcess, procInfo, processId) {
-        procInfo.isWaitingForPassword = true;
         procInfo.passwordAttempts++;
-        
         if (procInfo.passwordAttempts > 3) {
-            console.log('\n❌ 密码尝试次数过多，命令终止');
-            ptyProcess.kill();
+            console.log('\n❌ 密码尝试次数过多，已放弃命令执行');
+            procInfo.passwordAttempts = 0; // 重置尝试次数
+            // ptyProcess.kill();
             return;
         }
-        
+
         console.log('\n🔐 检测到密码输入提示...');
-        
+
         try {
             const password = await this.fetchPassword(`进程 ${processId} 需要sudo权限`);
-            
+
             if (password) {
+                this.lastSentPassword = password; // 存入过滤器
+                this.preFilledPassword = null;
+
                 ptyProcess.write(password + '\r\n');
                 procInfo.isWaitingForPassword = false;
                 console.log('⏳ 密码已输入，继续执行...');
             } else {
-                console.log('❌ 未获取到密码，命令终止');
-                ptyProcess.kill();
+                console.log('❌ 未获取到密码，命令可能无法继续执行');
+                // ptyProcess.kill();
             }
         } catch (error) {
             console.log(`❌ 获取密码失败: ${error.message}`);
-            ptyProcess.kill();
+            // ptyProcess.kill();
         }
     }
 
     async handlePtyInteractiveOutput(ptyProcess, procInfo, processId, data, outputBuffer) {
-        // 检测密码提示
-        if (this.isPasswordPrompt(data) && !procInfo.isWaitingForPassword) {
-            await this.handlePasswordPrompt(ptyProcess, procInfo, processId);
-            return;
-        }
+        // 增加数据清洗以便识别
+        const cleanData = data.replace(this.ANSI_REGEX, '');
 
         // 检测密码错误
-        if (this.isPasswordError(data)) {
+        if (this.isPasswordError(cleanData)) {
             this.handlePasswordError(procInfo);
             return;
         }
 
-        // 检测交互式确认提示
-        if (this.isConfirmationPrompt(data) && !procInfo.isWaitingForConfirmation) {
-            await this.handleConfirmationPrompt(ptyProcess, procInfo, data);
+        // 检测密码提示
+        if (this.isPasswordPrompt(cleanData)) {
+            if (procInfo.isHandlingPassword) return;
+            procInfo.isHandlingPassword = true;
+
+            const password = this.preFilledPassword;
+            if (password) {
+                this.lastSentPassword = password;
+                this.preFilledPassword = null;
+
+                setTimeout(() => {
+                    ptyProcess.write(password + '\r\n');
+                    console.log("🔑 密码已自动填入");
+                    setTimeout(() => {
+                        procInfo.isHandlingPassword = false;
+                        this.lastSentPassword = null;
+                    }, 1000);
+                }, 100);
+            } else {
+                await this.handlePasswordPrompt(ptyProcess, procInfo, processId);
+                procInfo.isHandlingPassword = false;
+            }
             return;
         }
 
-        // 检测命令完成 - 添加调试信息
+        // 检测交互确认
+        if (this.isConfirmationPrompt(cleanData) && !procInfo.isWaitingForConfirmation) {
+            await this.handleConfirmationPrompt(ptyProcess, procInfo, cleanData);
+            return;
+        }
+
+        // 检测命令完成
+        // 只要 initialPromptReceived 为 true，我们就不断尝试检测 outputBuffer
         if (procInfo.initialPromptReceived && procInfo.expectingCommandOutput) {
-            console.log(`🔍 检查命令完成状态...`);
-            if (this.isPtyCommandComplete(data, procInfo)) {
-                console.log(`🎯 触发命令完成事件`);
+            // 使用整个 outputBuffer 进行判定，防止提示符被切割在两个 data 事件中
+            if (this.isPtyCommandComplete(outputBuffer, procInfo)) {
                 this.handlePtyCommandComplete(procInfo, outputBuffer, processId);
             }
         }
@@ -621,11 +689,12 @@ class AdvancedTerminal extends EventEmitter{
 
         // PTY 数据输出处理
         ptyProcess.onData(async (data) => {
-            outputBuffer += data;
-            procInfo.processesOutput += data;
-            
+            const sanitizedData = this.filterSensitiveData(data, procInfo); // 脱敏化
+
+            outputBuffer += sanitizedData;
+            procInfo.processesOutput += sanitizedData;
             // 实时显示输出
-            process.stdout.write(data);
+            process.stdout.write(sanitizedData);
 
             // 处理初始提示符
             if (isFirstPrompt && this.isShellPrompt(data)) {
@@ -698,7 +767,10 @@ class AdvancedTerminal extends EventEmitter{
     }
 
     isPasswordPrompt(data) {
-        return data.includes('password') || data.includes('Password:') || data.includes('[sudo]');
+        // 移除颜色代码后再匹配
+        const cleanData = data.replace(/\x1B\[[0-9;]*[mGJKHF]/g, '');
+        const promptRegex = /[Pp]assword|密码|[sudo].*:/;
+        return promptRegex.test(cleanData);
     }
 
     isPasswordError(data) {
@@ -706,21 +778,41 @@ class AdvancedTerminal extends EventEmitter{
     }
 
     isPtyCommandComplete(output, procInfo) {
-        if (procInfo.isWaitingForPassword || procInfo.isWaitingForConfirmation) {
+        if (procInfo.isWaitingForPassword || procInfo.isWaitingForConfirmation || procInfo.isHandlingPassword) {
             return false;
         }
 
-        const lines = output.split('\n');
-        const lastLine = lines[lines.length - 1].trim();
-        
-        // console.log(`🔍 检测命令完成 - 最后一行: "${lastLine}"`);
-        
-        // 简化检测：只要包含 $ 或 # 并且包含用户名@主机名就认为是提示符
-        if (lastLine.includes('$') && lastLine.includes('@') && lastLine.includes(':') && procInfo.expectingCommandOutput) {
-            console.log(`✅ 检测到简化版命令完成！`);
+        // 1. 彻底清洗数据
+        const cleanOutput = output.replace(this.ANSI_REGEX, '');
+        const lines = cleanOutput.split(/\r?\n/);
+
+        // 找到最后一个非空行
+        let lastLine = "";
+        for (let i = lines.length - 1; i >= 0; i--) {
+            if (lines[i].trim()) {
+                lastLine = lines[i].trim();
+                break;
+            }
+        }
+
+        if (!lastLine) return false;
+
+        // 2. 增强的提示符特征匹配 (不仅仅是 @ 和 :)
+        // 匹配常见的提示符结尾：$, #, >, %, 以及一些带路径的结尾
+        const promptPatterns = [
+            /[$#%>]\s*$/,                         // 基础符号
+            /[\w.-]+@[\w.-]+:.*[$#%]\s*$/,        // 标准 Linux user@host
+            /\[.*\]\s*[$#%]\s*$/,                 // [user@host]类型
+            /PS [A-Z]:\\.*>\s*$/                  // Windows
+        ];
+
+        const isPrompt = promptPatterns.some(pattern => pattern.test(lastLine));
+
+        // 调试日志：如果已经接收到了初始提示符且正在等待输出，但在匹配中
+        if (procInfo.expectingCommandOutput && isPrompt) {
             return true;
         }
-        
+
         return false;
     }
 
@@ -747,29 +839,29 @@ class AdvancedTerminal extends EventEmitter{
     // 切换到指定进程
     switchProcess(processId) {
         if (!processId) {
-        console.log('❌ 请指定进程ID，使用 "ps" 查看进程列表');
-        this.rl.prompt();
-        return;
+            console.log('❌ 请指定进程ID，使用 "ps" 查看进程列表');
+            this.rl.prompt();
+            return;
         }
 
         if (processId === 'main') {
-        this.activeProcessId = null;
-        console.log('✅ 已返回主终端');
-        this.updatePrompt();
-        return;
+            this.activeProcessId = null;
+            console.log('✅ 已返回主终端');
+            this.updatePrompt();
+            return;
         }
 
         const procInfo = this.processes.get(processId);
         if (!procInfo) {
-        console.log(`❌ 未找到进程: ${processId}`);
-        this.rl.prompt();
-        return;
+            console.log(`❌ 未找到进程: ${processId}`);
+            this.rl.prompt();
+            return;
         }
 
         if (procInfo.status !== 'running') {
-        console.log(`❌ 进程 ${processId} 已终止，无法选择`);
-        this.rl.prompt();
-        return;
+            console.log(`❌ 进程 ${processId} 已终止，无法选择`);
+            this.rl.prompt();
+            return;
         }
 
         this.activeProcessId = processId;
@@ -800,7 +892,7 @@ class AdvancedTerminal extends EventEmitter{
 
         // 监听 PTY 输出
         procInfo.process.on('data', onData);
-        
+
         // 设置用户输入转发
         const originalWrite = process.stdout.write;
         process.stdout.write = (data) => {
@@ -824,9 +916,9 @@ class AdvancedTerminal extends EventEmitter{
     // 从进程分离
     detachFromProcess() {
         if (!this.activeProcessId) {
-        console.log('❌ 当前没有附加到任何进程');
-        this.rl.prompt();
-        return;
+            console.log('❌ 当前没有附加到任何进程');
+            this.rl.prompt();
+            return;
         }
 
         this.activeProcessId = null;
@@ -837,59 +929,59 @@ class AdvancedTerminal extends EventEmitter{
     // 进程管理功能
     listProcesses(filter = null) {
         if (this.processes.size === 0) {
-        console.log('📊 没有运行的进程');
-        this.rl.prompt();
-        return;
+            console.log('📊 没有运行的进程');
+            this.rl.prompt();
+            return;
         }
 
         if (filter === 'active') {
-        console.log('\n🎯 活跃进程状态:');
-        if (this.activeProcessId) {
-            const procInfo = this.processes.get(this.activeProcessId);
-            if (procInfo) {
-            const duration = Date.now() - procInfo.startTime;
-            console.log(`  🔵 ${this.activeProcessId}: ${procInfo.command}`);
-            console.log(`     状态: ${procInfo.status}, 运行时间: ${duration}ms`);
-            console.log(`     交互式: ${procInfo.isInteractive ? '是' : '否'}`);
+            console.log('\n🎯 活跃进程状态:');
+            if (this.activeProcessId) {
+                const procInfo = this.processes.get(this.activeProcessId);
+                if (procInfo) {
+                    const duration = Date.now() - procInfo.startTime;
+                    console.log(`  🔵 ${this.activeProcessId}: ${procInfo.command}`);
+                    console.log(`     状态: ${procInfo.status}, 运行时间: ${duration}ms`);
+                    console.log(`     交互式: ${procInfo.isInteractive ? '是' : '否'}`);
+                }
+            } else {
+                console.log('  当前没有活跃进程');
             }
         } else {
-            console.log('  当前没有活跃进程');
-        }
-        } else {
-        console.log('\n📊 管理的进程:');
-        this.processes.forEach((info, pid) => {
-            const duration = info.status === 'running' 
-            ? Date.now() - info.startTime 
-            : info.duration;
-            const activeIndicator = pid === this.activeProcessId ? '🔵 ' : '   ';
-            const statusIcon = info.status === 'running' ? '🟢' : '🔴';
-            console.log(`  ${activeIndicator}${pid}: ${info.command}`);
-            console.log(`     ${statusIcon} 状态: ${info.status}, 运行时间: ${duration}ms`);
-            console.log(`     📝 交互式: ${info.isInteractive ? '是' : '否'}`);
-        });
+            console.log('\n📊 管理的进程:');
+            this.processes.forEach((info, pid) => {
+                const duration = info.status === 'running'
+                    ? Date.now() - info.startTime
+                    : info.duration;
+                const activeIndicator = pid === this.activeProcessId ? '🔵 ' : '   ';
+                const statusIcon = info.status === 'running' ? '🟢' : '🔴';
+                console.log(`  ${activeIndicator}${pid}: ${info.command}`);
+                console.log(`     ${statusIcon} 状态: ${info.status}, 运行时间: ${duration}ms`);
+                console.log(`     📝 交互式: ${info.isInteractive ? '是' : '否'}`);
+            });
         }
         this.rl.prompt();
     }
 
     killProcess(processId) {
         if (!processId) {
-        console.log('❌ 请指定进程ID');
-        this.rl.prompt();
-        return;
+            console.log('❌ 请指定进程ID');
+            this.rl.prompt();
+            return;
         }
 
         const procInfo = this.processes.get(processId);
         if (procInfo && procInfo.process) {
-        procInfo.process.kill();
-        console.log(`🛑 已终止进程: ${processId}`);
-        
-        // 如果终止的是活跃进程，切换回主终端
-        if (this.activeProcessId === processId) {
-            this.activeProcessId = null;
-            this.updatePrompt();
-        }
+            procInfo.process.kill();
+            console.log(`🛑 已终止进程: ${processId}`);
+
+            // 如果终止的是活跃进程，切换回主终端
+            if (this.activeProcessId === processId) {
+                this.activeProcessId = null;
+                this.updatePrompt();
+            }
         } else {
-        console.log(`❌ 未找到进程: ${processId}`);
+            console.log(`❌ 未找到进程: ${processId}`);
         }
         this.rl.prompt();
     }
@@ -931,20 +1023,20 @@ class AdvancedTerminal extends EventEmitter{
         if (output.includes('$ ') || output.includes('# ') || output.includes('> ')) {
             const lines = output.split('\n');
             const lastLine = lines[lines.length - 1].trim();
-            
+
             // 确认是真正的命令提示符
-            if (lastLine.endsWith('$ ') || lastLine.endsWith('# ') || 
+            if (lastLine.endsWith('$ ') || lastLine.endsWith('# ') ||
                 lastLine.endsWith('> ') || lastLine.match(/^[\w]+@[\w]+:/)) {
                 return true;
             }
         }
 
         // 检测特定的命令结束标记
-        if (output.includes('installation completed') || 
+        if (output.includes('installation completed') ||
             output.includes('Process completed') ||
             output.includes('successfully installed') ||
             output.includes('Setting up') && output.includes('Unpacking') ||
-            output.includes('Abort.') || // 新增：检测中止信息
+            output.includes('Abort.') ||
             output.includes('Operation aborted')) {
             return true;
         }
@@ -955,36 +1047,39 @@ class AdvancedTerminal extends EventEmitter{
     // 命令完成提醒
     async notifyCommandCompletion(processId, procInfo, command, status) {
         const statusIcon = status === 'completed' ? '✅' : '⏰';
-        
+
         let processFinData = `🎯 ${statusIcon} 命令执行结束:\n`;
         processFinData += `   PID: ${processId}\n`;
         processFinData += `   命令: ${command}\n`;
         processFinData += `   状态: ${status === 'completed' ? '完成' : '超时'}\n`;
-        
+
         // 计算命令执行时间
         const currentTime = new Date();
         const duration = currentTime - procInfo.startTime;
         processFinData += `   耗时: ${duration}ms\n`;
 
         if (procInfo.processesOutput) {
-            const lastOutput = procInfo.processesOutput;
-            processFinData += `   完整输出: ${lastOutput}\n`;
+            // 去敏化
+            procInfo.processesOutput = maskSensitiveInfo(procInfo.processesOutput);
+
+            const safeLastOutput = procInfo.processesOutput;
+            processFinData += `   完整输出: ${safeLastOutput}\n`;
         }
-        
+
         console.log('\n' + processFinData);
-        
+
         if (status === 'completed') {
             // 重置所有交互状态
             procInfo.isWaitingForPassword = false;
             procInfo.passwordAttempts = 0;
             procInfo.isWaitingForConfirmation = false;
             procInfo.expectingCommandOutput = false;
-            
+
             // 如果有等待的命令，继续执行
             if (procInfo.pendingCommands.length > 0) {
                 const newCommand = procInfo.pendingCommands.shift();
                 console.log(`📥 检测到未完成的命令: ${newCommand}, 自动继续执行`);
-                await this.executeInProcess(processId, newCommand, true);
+                await this.executeInProcess(newCommand, processId, true);
             } else {
                 // 重新启用用户输入
                 this.setUserInputEnabled(processId, true);
@@ -997,23 +1092,26 @@ class AdvancedTerminal extends EventEmitter{
             callback(processId, processFinData);
         });
     }
-    
+
     // 进程完成冒泡通知
     async notifyProcessCompletion(processId, procInfo, exitCode) {
         const statusIcon = exitCode === 0 ? '✅' : '❌';
         const duration = procInfo.duration;
-            
+
         let processFinData = `🎉 ${statusIcon} 进程已结束:\n`;
         processFinData += `   PID: ${processId}\n`;
         processFinData += `   命令: ${procInfo.command}\n`;
         processFinData += `   状态: ${exitCode === 0 ? '成功' : '失败'} (退出码: ${exitCode})\n`;
         processFinData += `   耗时: ${duration}ms\n`;
-        
+
         if (procInfo.processesOutput) {
-            const lastOutput = procInfo.processesOutput;
-            processFinData += `   完整输出: ${lastOutput}\n`;
+            // 去敏化
+            procInfo.processesOutput = maskSensitiveInfo(procInfo.processesOutput);
+
+            const safeLastOutput = procInfo.processesOutput;
+            processFinData += `   完整输出: ${safeLastOutput}\n`;
         }
-        
+
         console.log('\n' + processFinData);
         // 重新启用用户输入
         this.setUserInputEnabled(processId, true);
@@ -1039,8 +1137,8 @@ class AdvancedTerminal extends EventEmitter{
     getHistory() {
         let res = '';
         this.history.slice(-10).forEach((item, index) => {
-        const time = item.timestamp.toLocaleTimeString();
-        res += `  ${index + 1}. [${time}] ${item.command}\n`;
+            const time = item.timestamp.toLocaleTimeString();
+            res += `  ${index + 1}. [${time}] ${item.command}\n`;
         });
         return res;
     }
@@ -1064,13 +1162,13 @@ class AdvancedTerminal extends EventEmitter{
 
     cleanup() {
         console.log('\n🧹 清理中...');
-        
+
         // 终止所有子进程
         this.processes.forEach((info, pid) => {
-        if (info.process && !info.process.killed) {
-            info.process.kill();
-            console.log(`🛑 终止进程: ${pid}`);
-        }
+            if (info.process && !info.process.killed) {
+                info.process.kill();
+                console.log(`🛑 终止进程: ${pid}`);
+            }
         });
 
         console.log('👋 再见！');

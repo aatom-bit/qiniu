@@ -5,30 +5,7 @@
     <meta charset="UTF-8">
     <title>Linux AI 助手</title>
     <style>
-        /* 保留要求的字体引用 */
-        @import url('https://fonts.googleapis.com/css2?family=Fira+Code&family=Inter:wght@400;500;600&family=Noto+Color+Emoji&display=swap');
-
-        :root {
-            --bg-deep: #0f0f10;
-            /* 极深背景 */
-            --bg-main: #1a1a1b;
-            /* 主背景 */
-            --bg-card: #232324;
-            /* 卡片/侧边栏背景 */
-            --bg-hover: #2d2d2e;
-            /* 悬停背景 */
-            --border: rgba(255, 255, 255, 0.08);
-            /* 极细边框线 */
-            --accent: #007acc;
-            /* 主题蓝 */
-            --accent-glow: rgba(0, 122, 204, 0.3);
-            --text-primary: #e1e1e1;
-            --text-secondary: #909090;
-            --text-muted: #606060;
-            --danger: #e74c3c;
-            --success: #27ae60;
-            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
 
         body,
         html {
@@ -36,218 +13,128 @@
             padding: 0;
             height: 100%;
             font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
-            background-color: var(--bg-deep);
-            color: var(--text-primary);
-            overflow: hidden;
-        }
-
-        /* 统一滚动条样式 */
-        ::-webkit-scrollbar {
-            width: 5px;
-            height: 5px;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--bg-hover);
-            border-radius: 10px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--text-muted);
+            background: #1e1e1e;
+            color: #ccc;
         }
 
         .app-container {
             display: flex;
             height: 100vh;
             width: 100vw;
+            overflow: hidden;
         }
 
-        /* --- 侧边栏 (Sidebar) --- */
+        /* 侧边栏 */
         .sidebar {
-            width: 260px;
+            flex: 0 0 auto;
+            width: 240px;
             min-width: 220px;
-            background-color: var(--bg-deep);
-            border-right: 1px solid var(--border);
+            width: 220px;
+            background: #252526;
+            border-right: 1px solid #333;
             display: flex;
             flex-direction: column;
-            z-index: 100;
-        }
-
-        .sidebar-header {
-            padding: 24px 20px;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 1.5px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-        }
-
-        .nav-group {
-            padding: 0 12px;
-            margin-bottom: 20px;
-        }
-
-        .action-btn {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 12px;
-            margin-bottom: 4px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text-secondary);
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .action-btn:hover {
-            background-color: var(--bg-hover);
-            color: var(--text-primary);
-        }
-
-        .action-btn.active {
-            background-color: var(--bg-card);
-            color: var(--accent);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
         .new-chat-btn {
-            margin: 0 12px 16px 12px;
-            padding: 10px;
-            background-color: var(--accent);
-            color: white;
-            border-radius: 8px;
+            padding: 12px;
+            margin: 5px 10px;
+            background: #2d2d2d;
+            color: #aaa;
             text-align: center;
-            font-size: 13px;
-            font-weight: 600;
+            border: 1px solid #444;
+            border-radius: 4px;
             cursor: pointer;
-            transition: opacity 0.2s;
+            font-size: 13px;
+            transition: 0.2s;
         }
 
         .new-chat-btn:hover {
-            opacity: 0.9;
+            background: #444;
         }
 
         .history-list {
             flex: 1;
             overflow-y: auto;
-            padding: 0 12px;
         }
 
         .history-item {
-            justify-content: space-between;
             display: flex;
             align-items: center;
-            padding: 8px 12px;
-            border-radius: 6px;
+            justify-content: space-between;
+            padding: 12px 15px;
             font-size: 13px;
-            color: var(--text-secondary);
-            margin-bottom: 2px;
+            border-bottom: 1px solid #2d2d2d;
             cursor: pointer;
+            transition: 0.2s;
         }
 
         .history-item:hover {
-            background-color: var(--bg-hover);
-            color: var(--text-primary);
+            background: #2d2d2d;
         }
 
-        .history-item.active {
-            background: var(--bg-card);
-            color: var(--accent);
-            border-color: var(--border);
-        }
-
-        /* --- 会话标题文本 --- */
         .history-item-text {
             flex: 1;
-            /* 占据所有剩余空间，将删除按钮挤向右侧 */
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            margin-right: 10px;
-        }
-
-        /* --- 美化的删除按钮 --- */
-        .history-item-delete {
-            opacity: 0;
-            /* 默认隐藏，减少视觉干扰 */
-            transform: scale(0.8);
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            color: var(--text-muted);
-            background: transparent;
-            border: none;
-            border-radius: 6px;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
             cursor: pointer;
-            flex-shrink: 0;
-            /* 防止按钮被挤压 */
         }
 
-        /* 鼠标悬停在整行时显示删除按钮 */
+        .history-item-delete {
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 4px 8px;
+            margin-left: 8px;
+            border-radius: 3px;
+            transition: 0.2s;
+            opacity: 0;
+        }
+
         .history-item:hover .history-item-delete {
             opacity: 1;
-            transform: scale(1);
         }
 
-        /* 删除按钮自身的悬停效果 */
         .history-item-delete:hover {
-            background-color: rgba(231, 76, 60, 0.15);
-            /* 淡淡的红色背景 */
-            color: var(--danger);
-            transform: scale(1.1);
+            background: #e74c3c;
+            color: #fff;
         }
 
-        /* --- 对话视图 (Chat View) --- */
+        .history-item.active {
+            background: #37373d;
+            border-left: 3px solid #007acc;
+            padding-left: 12px;
+        }
+
+        /* 对话区 */
         .main-chat {
             flex: 1;
             display: flex;
             flex-direction: column;
-            background-color: var(--bg-main);
-            position: relative;
-            /* 确保主容器占满剩余空间 */
-            min-width: 0;
+            min-width: 300px;
         }
 
         #messages-container {
             flex: 1;
             overflow-y: auto;
-            padding: 40px 20px 150px 20px;
-            /* 侧边改用固定小边距，底部留足空间 */
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            /* 关键：强制子元素在交叉轴居中 */
+            padding: 20px 20px;
+            /* padding: 20px; */
         }
 
         .message {
             display: flex;
-            gap: 20px;
-            margin-bottom: 32px;
-            animation: fadeIn 0.4s ease;
-            width: 100%;
-            max-width: 800px;
-            /* 限制最大宽度，防止超大屏时行太长难阅读 */
-            box-sizing: border-box;
-        }
-
-        .message.user {
-            flex-direction: row-reverse;
-        }
-
-        .message.user .text-bubble {
-            text-align: right;
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+            /* max-width: 90%; */
         }
 
         @keyframes fadeIn {
             from {
                 opacity: 0;
-                transform: translateY(10px);
+                transform: translateY(5px);
             }
 
             to {
@@ -256,209 +143,239 @@
             }
         }
 
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
         .avatar {
-            flex-shrink: 0;
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
-            background: var(--bg-card);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-            border: 1px solid var(--border);
+            font-size: 20px;
+            margin: 0 12px;
+        }
+
+        .content {
+            max-width: 80%;
+            min-width: 50px;
         }
 
         .text-bubble {
-            flex: 1;
-            /* 占据剩余宽度 */
-            min-width: 0;
-            /* 防止长文本撑破容器 */
-            line-height: 1.6;
-            font-size: 14px;
-            color: var(--text-primary);
-            padding-top: 4px;
+            background: #333;
+            padding: 10px 14px;
+            border-radius: 8px;
+            line-height: 1.5;
             word-wrap: break-word;
-            /* 自动换行 */
         }
 
         .user .text-bubble {
-            color: var(--accent);
-            font-weight: 500;
+            background: #007acc;
+            color: white;
         }
 
-        /* 代码块增强 */
+        /* 代码块样式 */
         .code-block {
-            margin: 16px 0;
+            width: 100%;
             background: #000;
-            border-radius: 10px;
-            border: 1px solid var(--border);
-            overflow: hidden;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            margin-top: 8px;
+            border: 1px solid #444;
         }
 
         .code-header {
-            background: #1a1a1a;
-            padding: 8px 16px;
+            background: #333;
+            padding: 5px 12px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-size: 11px;
-            font-family: 'Inter';
-            color: var(--text-muted);
         }
 
         .code-header button {
-            background: var(--accent);
-            color: white;
+            background: #28a745;
             border: none;
-            padding: 4px 12px;
-            border-radius: 4px;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
             cursor: pointer;
-            font-size: 10px;
-            font-weight: 700;
         }
 
         pre {
+            padding: 12px;
             margin: 0;
-            padding: 16px;
-            font-family: 'Fira Code', monospace;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            overflow-x: auto;
             font-size: 13px;
             color: #d7ba7d;
-            overflow-x: auto;
         }
 
-        /* 悬浮输入框 */
+        .code-block pre {
+            padding: 12px;
+            margin: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            overflow-x: auto;
+            /* 关键：代码过长时内部横向滚动 */
+            white-space: pre;
+            /* 保持代码原样，不换行以方便阅读 */
+            color: #d7ba7d;
+        }
+
+        pre::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        pre::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 4px;
+        }
+
+        pre::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* 输入区 */
         .input-area {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            padding: 30px 20px;
-            /* 外部容器间距 */
-            background: linear-gradient(to top, var(--bg-main) 60%, transparent);
-            display: flex;
+            min-width: 50px;
+            padding: 20px;
+            border-top: 1px solid #333;
             justify-content: center;
-            /* 关键：使输入框水平居中 */
-            pointer-events: none;
-            z-index: 50;
-            /* 让下方可滚动内容点击生效 */
+            /* 输入框居中 */
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
         }
 
         .input-wrapper {
-            pointer-events: auto;
             width: 100%;
-            max-width: 800px;
-            /* 必须与 .message 的 max-width 一致 */
-            background: rgba(30, 30, 31, 0.85);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 12px 16px;
+            max-width: 80%;
+            /* 与消息最大宽度对齐 */
             display: flex;
-            align-items: flex-end;
             gap: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
         }
 
         #user-input {
             flex: 1;
-            background: transparent;
-            border: none;
+            height: 50px;
+            background: #2d2d2d;
+            border: 1px solid #444;
             color: white;
-            font-size: 14px;
-            font-family: 'Inter', sans-serif;
-            outline: none;
+            padding: 10px;
+            border-radius: 4px;
             resize: none;
-            max-height: 200px;
-            padding: 4px 0;
-            line-height: 1.5;
+            outline: none;
+            resize: vertical;
+            /* 允许用户垂直拉伸输入框 */
         }
 
-        #send-btn,
-        #asr-btn {
-            flex-shrink: 0;
-            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
-            background: transparent;
+        #send-btn {
+            width: 80px;
+            background: #007acc;
             border: none;
-            color: var(--text-secondary);
-            width: 32px;
-            height: 32px;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #asr-btn {
+            width: 50px;
+            height: 50px;
+            background: #555;
+            border: none;
+            color: white;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            transition: 0.2s;
             display: flex;
             align-items: center;
             justify-content: center;
+            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+        }
+
+        #asr-btn:hover:not(.recording) {
+            background: #666;
+        }
+
+        #asr-btn.recording {
+            background: #e74c3c;
+            animation: asr-pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes asr-pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
+            }
+
+            50% {
+                box-shadow: 0 0 0 10px rgba(231, 76, 60, 0);
+            }
+        }
+
+        .action-btn {
+            padding: 12px;
+            margin: 5px 10px;
+            background: #2d2d2d;
+            color: #aaa;
+            text-align: center;
+            border: 1px solid #444;
+            border-radius: 4px;
             cursor: pointer;
-            transition: all 0.2s;
-            border-radius: 8px;
-        }
-
-        #send-btn:hover {
-            background: var(--accent);
-            color: white;
-        }
-
-        /* --- 包管理视图 (Package Manager) --- */
-        .package-manager-view {
-            flex: 1;
-            display: none;
-            flex-direction: column;
-            background: var(--bg-main);
-        }
-
-        .pkg-toolbar {
-            padding: 24px 30px;
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .pkg-filter-tabs {
-            display: flex;
-            gap: 8px;
-        }
-
-        .pkg-tab {
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 12px;
-            cursor: pointer;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            color: var(--text-secondary);
+            font-size: 13px;
             transition: 0.2s;
         }
 
-        .pkg-tab.active {
-            background: var(--accent);
-            color: white;
-            border-color: transparent;
+        .action-btn:hover {
+            background: #3d3d3d;
+            color: #fff;
+        }
+
+        .action-btn.active {
+            border-color: #ff9a6b;
+            color: #ff9a6b;
+        }
+
+        /* 包管理器主视图 */
+        .package-manager-view {
+            display: none;
+            /* 默认隐藏 */
+            flex: 1;
+            flex-direction: column;
+            background: #1e1e1e;
+        }
+
+        .pkg-toolbar {
+            padding: 10px 20px;
+            background: #252526;
+            border-bottom: 1px solid #333;
+            display: flex;
+            gap: 10px;
+            align-items: center;
         }
 
         .pkg-search-input {
             flex: 1;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 8px 16px;
+            background: #3c3c3c;
+            border: 1px solid #555;
             color: white;
-            outline: none;
+            padding: 5px 10px;
+            border-radius: 3px;
         }
 
         .pkg-content {
             display: flex;
             flex: 1;
             overflow: hidden;
-            padding: 20px 30px;
-            gap: 24px;
         }
 
         .pkg-list-container {
-            flex: 2;
-            background: var(--bg-card);
-            border-radius: 12px;
-            border: 1px solid var(--border);
+            flex: 1;
+            border-right: 1px solid #333;
             overflow-y: auto;
         }
 
@@ -470,85 +387,141 @@
 
         .pkg-table th {
             text-align: left;
-            padding: 12px 16px;
-            background: rgba(0, 0, 0, 0.2);
-            color: var(--text-muted);
-            font-size: 11px;
-            text-transform: uppercase;
+            padding: 8px 12px;
+            background: #2d2d2d;
+            position: sticky;
+            top: 0;
         }
 
         .pkg-table td {
-            padding: 14px 16px;
-            border-bottom: 1px solid var(--border);
+            padding: 8px 12px;
+            border-bottom: 1px solid #2d2d2d;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 200px;
         }
 
         .pkg-table tr:hover {
-            background: rgba(255, 255, 255, 0.02);
+            background: #2a2d2e;
+        }
+
+        .pkg-table tr.selected {
+            background: #37373d;
+            color: #007acc;
         }
 
         .pkg-detail-pane {
-            flex: 1;
-            background: var(--bg-card);
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
+            flex: 0 0 300px;
+            background: #1e1e1e;
+            padding: 15px;
+            overflow-y: auto;
+            font-size: 12px;
+            line-height: 1.6;
         }
 
         .pkg-detail-header {
-            font-size: 18px;
-            font-weight: 700;
-            margin-bottom: 16px;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #fff;
         }
 
-        .status-tag {
-            font-size: 10px;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-weight: 700;
-            text-transform: uppercase;
+        .loading-overlay {
+            color: #888;
+            padding: 20px;
+            text-align: center;
         }
 
-        .status-tag.installed {
-            background: rgba(39, 174, 96, 0.1);
-            color: var(--success);
-            border: 1px solid rgba(39, 174, 96, 0.2);
+        /* 筛选器容器 */
+        .pkg-filter-tabs {
+            display: flex;
+            background: #252526;
+            border-bottom: 1px solid #333;
+            padding: 0 10px;
         }
 
+        .pkg-tab {
+            padding: 8px 15px;
+            font-size: 12px;
+            cursor: pointer;
+            color: #888;
+            border-bottom: 2px solid transparent;
+        }
+
+        .pkg-tab.active {
+            color: #fff;
+            border-bottom-color: #007acc;
+            background: #2d2d2d;
+        }
+
+        /* 操作按钮 */
         .pkg-action-btn {
-            width: 28px;
-            height: 28px;
-            border-radius: 6px;
+            width: 24px;
+            height: 24px;
             border: none;
+            border-radius: 4px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
+            font-weight: bold;
+            font-size: 16px;
+            transition: 0.2s;
         }
 
         .btn-install {
-            background: var(--success);
+            background: #28a745;
             color: white;
+        }
+
+        .btn-install:hover {
+            background: #218838;
         }
 
         .btn-remove {
-            background: var(--danger);
+            background: #dc3545;
             color: white;
         }
 
-        .ansi-formatted {
-            display: block;
-            white-space: pre-wrap;
-            word-break: break-all;
-            font-family: 'Fira Code', monospace;
+        .btn-remove:hover {
+            background: #c82333;
         }
 
-        /* 强制覆盖 pre 的背景，确保颜色对比度 */
-        .code-block pre {
-            background-color: #000 !important;
-            overflow-x: auto;
+        /* 详情页的大按钮 */
+        .pkg-detail-actions {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #333;
+            display: flex;
+            gap: 10px;
+        }
+
+        .big-action-btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* 状态标记 */
+        .status-tag {
+            font-size: 10px;
+            padding: 2px 5px;
+            border-radius: 3px;
+            background: #444;
+            color: #aaa;
+            margin-left: 8px;
+        }
+
+        .status-tag.installed {
+            background: #0e639c;
+            color: #fff;
         }
     </style>
 </head>
@@ -556,55 +529,42 @@
 <body>
     <div class="app-container">
         <div class="sidebar">
-            <div class="sidebar-header">Linux助手</div>
+            <!-- 显示/关闭悬浮球按钮 -->
+            <div class="action-btn" id="toggle-ball-btn">显示悬浮球</div>
 
-            <div class="nav-group">
-                <div class="action-btn active" id="show-chat-btn">
-                    <span>💬</span> AI 对话
-                </div>
-                <div class="action-btn" id="show-pkg-btn">
-                    <span>📦</span> 包管理
-                </div>
-                <div class="action-btn" id="toggle-ball-btn">
-                    <span>🔮</span> 悬浮球
-                </div>
-            </div>
+            <div class="action-btn" id="show-chat-btn">💬 AI 对话</div>
+            <div class="action-btn" id="show-pkg-btn">📦 包管理</div>
 
-            <div id="chat-sidebar-parts" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+            <div id="chat-sidebar-parts">
                 <div class="new-chat-btn" id="new-chat-btn">+ 新对话</div>
-                <div class="history-list" id="history-list">
-                    <!-- 历史条目动态渲染 -->
-                </div>
+                <div class="history-list" id="history-list"></div>
             </div>
         </div>
 
-        <!-- AI Chat View -->
+        <!-- AI对话视图 -->
         <div class="main-chat" id="main-chat-view">
-            <div id="messages-container">
-                <!-- 消息动态渲染 -->
-            </div>
-
+            <div id="messages-container"></div>
             <div class="input-area">
                 <div class="input-wrapper">
-                    <textarea id="user-input" placeholder="询问任何你想了解的Linux问题..." rows="1"></textarea>
-                    <button id="asr-btn" title="Voice Input">🎤</button>
-                    <button id="send-btn">🚀</button>
+                    <textarea id="user-input" placeholder="输入指令或提问..."></textarea>
+                    <button id="send-btn">发送</button>
+                    <button id="asr-btn" title="语音输入">🎤</button>
                 </div>
             </div>
         </div>
 
-        <!-- Package Manager View -->
+        <!-- 包管理视图 -->
         <div class="package-manager-view" id="package-manager-view">
+            <!-- 1. 增加筛选标签 -->
+            <div class="pkg-filter-tabs">
+                <div class="pkg-tab active" id="tab-installed">已安装</div>
+                <div class="pkg-tab" id="tab-all">所有软件包</div>
+            </div>
+
             <div class="pkg-toolbar">
-                <div class="pkg-filter-tabs">
-                    <div class="pkg-tab active" id="tab-installed">已安装</div>
-                    <div class="pkg-tab" id="tab-all">全部包</div>
-                </div>
-                <input type="text" class="pkg-search-input" id="pkg-search-input" placeholder="Filter packages...">
-                <div id="pkg-manager-tag" style="font-size: 11px; color: var(--text-muted);">Manager: Detecting...</div>
-                <button class="action-btn"
-                    style="margin:0; padding: 6px 12px;font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;"
-                    id="refresh-pkg-btn">🔄 刷新</button>
+                <input type="text" class="pkg-search-input" id="pkg-search-input" placeholder="搜索软件包...">
+                <button class="new-chat-btn" style="margin:0" id="refresh-pkg-btn">刷新</button>
+                <div id="pkg-manager-tag" style="font-size: 10px; color: #666; padding: 0 10px;">检测中...</div>
             </div>
 
             <div class="pkg-content">
@@ -612,24 +572,21 @@
                     <table class="pkg-table" id="pkg-table">
                         <thead>
                             <tr>
-                                <th>包名</th>
-                                <th>版本</th>
-                                <th style="width: 50px; text-align: center;">行为</th>
+                                <th>名称</th>
+                                <th>状态</th>
+                                <th style="width: 40px;">操作</th>
                             </tr>
                         </thead>
                         <tbody id="pkg-list-body"></tbody>
                     </table>
                 </div>
                 <div class="pkg-detail-pane">
-                    <div class="pkg-detail-header" id="detail-title">Selection Required</div>
-                    <pre id="pkg-detail-content"
-                        style="flex:1; font-size:12px; color: var(--text-secondary); white-space: pre-wrap;">Select a package to view its manifest and dependencies.</pre>
-                    <div class="pkg-detail-actions" id="pkg-detail-actions"
-                        style="display:none; margin-top: 20px; gap: 10px;">
-                        <button id="detail-install-btn" class="new-chat-btn"
-                            style="flex:1; margin:0; background:var(--success)">安装</button>
-                        <button id="detail-remove-btn" class="new-chat-btn"
-                            style="flex:1; margin:0; background:var(--danger)">移除</button>
+                    <div class="pkg-detail-header" id="detail-title">详情</div>
+                    <pre id="pkg-detail-content">选择软件包查看信息</pre>
+                    <!-- 2. 详情页快捷操作 -->
+                    <div class="pkg-detail-actions" id="pkg-detail-actions" style="display:none;">
+                        <button id="detail-install-btn" class="big-action-btn btn-install">＋ 安装</button>
+                        <button id="detail-remove-btn" class="big-action-btn btn-remove">－ 卸载</button>
                     </div>
                 </div>
             </div>
@@ -649,7 +606,7 @@
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
 
-        // 初始化
+        // 1. 初始化
         async function init() {
             state.history = await window.electronAPI.getHistory();
             if (state.history.length === 0) {
@@ -659,63 +616,7 @@
             renderMessages();
         }
 
-        function renderChunk(txt, styles) {
-            if (!txt) return "";
-            if (styles.size === 0) return txt;
-            return `<span style="${Array.from(styles).join(';')}">${txt}</span>`;
-        }
-
-        // 渲染ansi字符为html
-        function formatAnsi(text) {
-            if (!text) return "";
-
-            // 1. 预处理：彻底移除不支持的终端控制序列 (如 [?2004h, [2K, [H 等)
-            // 这里的正则匹配所有以 h, l, J, K, H, G, A, B, C, D 结尾的控制序列
-            let cleanText = text.replace(/\x1B\[[?0-9;]*[a-zA-Z]/g, (match) => {
-                // 仅保留颜色相关的序列 (以 m 结尾)
-                return match.endsWith('m') ? match : "";
-            });
-
-            // 2. HTML 转义
-            let escaped = cleanText
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;");
-
-            // 3. 颜色解析逻辑 (保持之前的状态机模式，但更简洁)
-            const colors = {
-                1: "font-weight:bold",
-                31: "color:#ff5555", 32: "color:#50fa7b", 33: "color:#f1fa8c",
-                34: "color:#8be9fd", 35: "color:#ff79c6", 36: "color:#8be9fd",
-                90: "color:#6272a4", 0: "reset"
-            };
-
-            let result = "";
-            let currentStyles = new Set();
-            const ansiRegex = /\x1B\[([0-9;]*)m/g;
-            let lastIndex = 0;
-            let match;
-
-            while ((match = ansiRegex.exec(escaped)) !== null) {
-                result += renderChunk(escaped.substring(lastIndex, match.index), currentStyles);
-
-                match[1].split(';').forEach(codeStr => {
-                    const code = parseInt(codeStr || "0");
-                    if (code === 0) currentStyles.clear();
-                    else if (colors[code]) {
-                        if (code >= 31) { // 颜色代码，清除之前的颜色
-                            currentStyles.forEach(s => { if (s.startsWith("color")) currentStyles.delete(s) });
-                        }
-                        currentStyles.add(colors[code]);
-                    }
-                });
-                lastIndex = ansiRegex.lastIndex;
-            }
-            result += renderChunk(escaped.substring(lastIndex), currentStyles);
-            return result;
-        }
-
-        // 渲染历史记录侧边栏
+        // 2. 渲染历史记录侧边栏
         function renderHistory() {
             historyListEl.innerHTML = '';
             state.history.forEach((session, index) => {
@@ -725,7 +626,7 @@
                 const textSpan = document.createElement('span');
                 textSpan.className = 'history-item-text';
                 textSpan.innerText = session.title || '新会话 ' + (index + 1);
-                div.onclick = () => switchSession(index);
+                textSpan.onclick = () => switchSession(index);
                 div.appendChild(textSpan);
 
                 const deleteBtn = document.createElement('button');
@@ -741,7 +642,7 @@
             });
         }
 
-        // 渲染当前会话的消息
+        // 3. 渲染当前会话的消息
         function renderMessages() {
             msgContainer.innerHTML = '';
             const messages = state.history[state.currentSessionIndex]?.messages || [];
@@ -749,52 +650,44 @@
             scrollToBottom();
         }
 
-        // 将单条消息添加到 UI
+        // 4. 将单条消息添加到 UI
         function appendMessageUI(role, content) {
-            if (!content) return;
+            if (!content)
+                content = '';
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${role}`;
 
+            const isCode = content.includes('```');
             const avatar = role === 'user' ? '👤' : '🤖';
 
-            let innerHTML = `<div class="avatar">${avatar}</div><div class="text-bubble">`;
+            let innerHTML = `
+            <div class="avatar">${avatar}</div>
+            <div class="content">
+        `;
 
-            // 处理代码块逻辑
-            if (content.includes('```')) {
-                const parts = content.split(/```/);
-                parts.forEach((part, index) => {
-                    if (index % 2 === 1) { // 代码内容
-                        const match = part.match(/^([a-zA-Z0-9]+)\n/);
-                        const lang = match ? match[1] : 'shell';
-                        // 原始代码，用于执行按钮
-                        const rawCode = part.replace(/^[a-zA-Z0-9]+\n/, '').trim();
-
-                        // 转换后的代码，用于显示
-                        const htmlContent = formatAnsi(rawCode);
-
-                        innerHTML += `
+            if (isCode) {
+                // 提取代码逻辑 (正则表达式)
+                const code = content.replace(/```(sh|bash|shell)?/gi, '').replace(/```/g, '').trim();
+                innerHTML += `
                 <div class="code-block">
                     <div class="code-header">
-                        <span>${lang.toUpperCase()}</span>
-                        <button onclick="executeScript(\`${rawCode.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">EXECUTE</button>
+                        <span>Shell Script</span>
+                        <button onclick="executeScript(\`${code.replace(/`/g, '\\`')}\`)">⚡ 执行</button>
                     </div>
-                    <pre><code class="ansi-formatted">${htmlContent}</code></pre>
-                </div>`;
-                    } else if (part.trim()) {
-                        innerHTML += `<div style="margin-bottom: 8px;">${part.trim().replace(/\n/g, '<br>')}</div>`;
-                    }
-                });
+                    <pre><code>${code}</code></pre>
+                </div>
+            `;
             } else {
-                innerHTML += content.replace(/\n/g, '<br>');
+                innerHTML += `<div class="text-bubble">${content}</div>`;
             }
 
             innerHTML += `</div>`;
             msgDiv.innerHTML = innerHTML;
-            document.getElementById('messages-container').appendChild(msgDiv);
-            setTimeout(scrollToBottom, 50);
+            msgContainer.appendChild(msgDiv);
+            scrollToBottom();
         }
 
-        // 交互功能
+        // 5. 交互功能
         async function send() {
             const text = userInput.value.trim();
             if (!text || state.loading) return;
@@ -814,8 +707,13 @@
                 sessionCount: state.history.length
             });
 
+            // 这里已经在监听中更新，无需再显示一遍
+            // // 更新助手回复
+            // state.history[state.currentSessionIndex].messages.push({ role: 'assistant', content: response });
+            // appendMessageUI('assistant', response);
+
             // 如果是首条消息，更新标题
-            if (state.history[state.currentSessionIndex].messages.length <= 2) {
+            if (state.history[state.currentSessionIndex].messages.length === 1) {
                 state.history[state.currentSessionIndex].title = text.length > 5 ? `${text.substring(0, 5)}...` : text;
                 renderHistory();
             }
@@ -890,12 +788,6 @@
         document.getElementById('new-chat-btn').onclick = createNewChat;
         sendBtn.onclick = send;
         userInput.onkeyup = (e) => { if (e.key === 'Enter') send(); };
-        // 输入框自动高度逻辑
-        userInput.addEventListener('input', function () {
-            this.style.height = 'auto';
-            let newHeight = Math.min(this.scrollHeight, 200);
-            this.style.height = newHeight + 'px';
-        });
 
         // ASR 按钮事件处理 - 长按开始录音，松开停止
         let asrPressTime = 0;
@@ -1044,13 +936,13 @@
                     max-height: 70vh;
                     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
                     color: #ccc;
-                    font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+                    font-family: 'Segoe UI', sans-serif;
                     overflow-y: auto;
                 `;
 
                 dialog.innerHTML = `
                     <div>
-                        <h2 style="margin: 0 0 16px 0; color: #fff; font-size: 18px;font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;">⚡ 命令确认</h2>
+                        <h2 style="margin: 0 0 16px 0; color: #fff; font-size: 18px;">⚡ 命令确认</h2>
                         <p style="margin: 0 0 12px 0; color: #aaa; font-size: 13px;">${message}</p>
                         
                         <div style="background: #1e1e1e; border: 1px solid #444; border-radius: 4px; padding: 12px; margin-bottom: 16px;">
@@ -1135,7 +1027,6 @@
                 // 创建模态对话框
                 const backdrop = document.createElement('div');
                 backdrop.style.cssText = `
-                    font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
                     position: fixed;
                     top: 0;
                     left: 0;
@@ -1181,7 +1072,7 @@
                 }
 
                 dialog.innerHTML = `
-                    <div style="margin-bottom: 20px;font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;">
+                    <div style="margin-bottom: 20px;">
                         <h2 style="margin: 0 0 12px 0; color: #fff; font-size: 18px;">🔐 需要管理员密码</h2>
                         <div style="background: #3a2a2a; border-left: 3px solid #e74c3c; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
                             <p style="margin: 0; color: #ffaaaa; font-size: 13px;">⚠️ 仅在信任的命令中输入密码</p>

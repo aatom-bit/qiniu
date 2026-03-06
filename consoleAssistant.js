@@ -161,12 +161,13 @@ class ConsoleAssistant {
         
         let shouldExecute = false;
         let executionResult = "";
+        let prePassword = null;
         
-        // 权限检查：sudo 命令 vs 普通命令
+        // 权限检查
         if (containSudoCommand(command)) {
             // sudo 命令：获取密码（密码即确认）
-            const sudoPassword = await this.getPassword(command);
-            if (!sudoPassword) {
+            prePassword = await this.getPassword(command);
+            if (!prePassword) {
                 return `### 执行取消\n需要管理员密码才能执行此命令`;
             }
             shouldExecute = true;
@@ -179,10 +180,10 @@ class ConsoleAssistant {
             shouldExecute = true;
         }
 
-        // 第3步：执行命令
+        // 执行命令
         if (shouldExecute) {
             try {
-                let ret = await this.terminal.executeCommand(command, consoleInfo.processId);
+                let ret = await this.terminal.executeCommand(command, consoleInfo.processId, prePassword);
                 let output = ret?.output;
                 
                 if (output) {
