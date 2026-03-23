@@ -151,38 +151,56 @@ function getAiDecision(content) {
     return 'chat';
 }
 
-async function getSudoPermission(content) {
-    // 如果包含sudo命令，则向用户申请密码(仅需一次)，并返回；否则返回null
-    if (containSudoCommand(content)) {
-        try {
-            const password = await requestPermissionFromMainwindow(mainWin.webContents, {
+async function getSudoPermission(content, retry=false) {
+
+    if (!containSudoCommand(content)) {
+        return null;
+    }
+
+    try {
+
+        const response = await requestPermissionFromMainwindow(
+            mainWin.webContents,
+            {
                 type: 'sudo-password',
-                message: '执行此命令需要管理员密码'
-            });
-            return password.output ? password.output : password;
-        } catch (error) {
-            console.error('获取密码失败:', error);
+                command: content,
+                message: '执行此命令需要管理员密码',
+                retry: retry
+            }
+        );
+
+        if (!response.approved) {
             return null;
         }
+
+        return response.password;
+
+    } catch (error) {
+        console.error('获取密码失败:', error);
+        return null;
     }
-    return null;
 }
 
 async function getRunPermission(content) {
-    // 显示用户确认执行 content 命令的窗口，返回用户的确认结果
+
     try {
-        const permission = await requestPermissionFromMainwindow(mainWin.webContents, {
-            type: 'run-confirmation',
-            command: content,
-            message: '确认是否执行此命令？'
-        });
-        return permission === true; // 只有用户点击"执行"才返回 true
+
+        const response = await requestPermissionFromMainwindow(
+            mainWin.webContents,
+            {
+                type: 'run-confirmation',
+                command: content,
+                message: '确认是否执行此命令？'
+            }
+        );
+
+        return response.approved === true;
+
     } catch (error) {
         console.error('获取运行权限失败:', error);
         return false;
     }
 }
-
 // 存储所有待处理的请求：Map<requestId, { resolve, reject }>
 const pendingRequests = new Map();
 
@@ -194,21 +212,21 @@ const pendingRequests = new Map();
  */
 function requestPermissionFromMainwindow(webContents, data) {
     return new Promise((resolve, reject) => {
-        const requestId = randomUUID(); // 生成唯一ID，确保并发不冲突
+        const requestId = randomUUID();
 
-        // 1. 存入 Map
         pendingRequests.set(requestId, { resolve, reject });
 
-        // 2. 发送给前端
-        webContents.send('ask-for-permission', { requestId, ...data });
+        webContents.send('ask-for-permission', {
+            requestId,
+            ...data
+        });
 
-        // 可选：设置超时，防止渲染进程不响应导致内存泄漏
         setTimeout(() => {
             if (pendingRequests.has(requestId)) {
                 pendingRequests.delete(requestId);
                 reject(new Error('Permission request timed out'));
             }
-        }, 60000); // 60秒超时
+        }, 60000);
     });
 }
 
@@ -338,10 +356,20 @@ ipcMain.handle('pkg:getManagerName', () => {
 
 // 监听渲染进程的回执
 ipcMain.on('permission-response', (event, { requestId, result }) => {
+
     const request = pendingRequests.get(requestId);
-    if (request) {
-        request.resolve(result); // 触发 Promise 成功
-        pendingRequests.delete(requestId); // 及时清理
+
+    if (!request) {
+        console.warn("收到未知 permission-response:", requestId);
+        return;
+    }
+
+    pendingRequests.delete(requestId);
+
+    if (result && result.approved !== undefined) {
+        request.resolve(result);
+    } else {
+        request.reject(new Error("Invalid permission response"));
     }
 });
 

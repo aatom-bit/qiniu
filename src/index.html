@@ -669,20 +669,20 @@
         function formatAnsi(text) {
             if (!text) return "";
 
-            // 1. 预处理：彻底移除不支持的终端控制序列 (如 [?2004h, [2K, [H 等)
+            // 移除不支持的终端控制序列 (如 [?2004h, [2K, [H 等)
             // 这里的正则匹配所有以 h, l, J, K, H, G, A, B, C, D 结尾的控制序列
             let cleanText = text.replace(/\x1B\[[?0-9;]*[a-zA-Z]/g, (match) => {
                 // 仅保留颜色相关的序列 (以 m 结尾)
                 return match.endsWith('m') ? match : "";
             });
 
-            // 2. HTML 转义
+            // HTML 转义
             let escaped = cleanText
                 .replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
                 .replace(/>/g, "&gt;");
 
-            // 3. 颜色解析逻辑 (保持之前的状态机模式，但更简洁)
+            // 颜色解析逻辑
             const colors = {
                 1: "font-weight:bold",
                 31: "color:#ff5555", 32: "color:#50fa7b", 33: "color:#f1fa8c",
@@ -994,27 +994,33 @@
         });
 
         window.electronAPI.onAskPermission(async (data) => {
-            const { requestId, type, message, command } = data;
+            const { requestId, type, message, command, retry } = data;
 
-            console.log(`收到权限请求: ${type}, ID: ${requestId}`);
+            console.log(`权限请求: ${type}`, data);
 
-            let result;
+            let result = { approved: false };
 
             if (type === 'sudo-password') {
-                // 显示密码输入对话框（传递 command 以显示要执行的命令）
-                result = await showSudoPasswordDialog(message, command);
+                const password = await showSudoPasswordDialog(message, command, retry);
+                if (password !== null) {
+                    result = {
+                        approved: true,
+                        password: password
+                    };
+                }
+
             } else if (type === 'run-confirmation') {
-                // 显示命令确认对话框
-                result = await showRunConfirmationDialog(message, command);
+                const ok = await showRunConfirmationDialog(message, command);
+                result = { approved: ok };
+
             } else {
-                // 其他类型的权限请求
-                result = await showMyCustomDialog(message || `是否允许访问 ${type}?`);
+                const ok = await showMyCustomDialog(message);
+                result = { approved: ok };
             }
 
-            // 将结果发回主进程，必须带上 requestId
             window.electronAPI.sendPermissionResponse({
-                requestId: requestId,
-                result: result // 密码字符串或 boolean
+                requestId,
+                result
             });
         });
 
@@ -1130,7 +1136,7 @@
             });
         }
 
-        async function showSudoPasswordDialog(message, command) {
+        async function showSudoPasswordDialog(message, command, retry = false) {
             return new Promise((resolve) => {
                 // 创建模态对话框
                 const backdrop = document.createElement('div');
@@ -1180,6 +1186,18 @@
                     `;
                 }
 
+                let retryNotice = retry ? `
+<div style="
+    background:#3a1e1e;
+    border-left:3px solid #e74c3c;
+    padding:10px;
+    margin-bottom:12px;
+    color:#ffaaaa;
+    font-size:12px;">
+密码错误，请重新输入
+</div>
+` : "";
+
                 dialog.innerHTML = `
                     <div style="margin-bottom: 20px;font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;">
                         <h2 style="margin: 0 0 12px 0; color: #fff; font-size: 18px;">🔐 需要管理员密码</h2>
@@ -1187,6 +1205,9 @@
                             <p style="margin: 0; color: #ffaaaa; font-size: 13px;">⚠️ 仅在信任的命令中输入密码</p>
                             <p style="margin: 8px 0 0 0; color: #ccc; font-size: 12px;">此操作需要 sudo 权限</p>
                         </div>
+                        
+                        ${retryNotice}
+
                         ${commandDisplay}
                         <p style="margin: 0; color: #ccc; font-size: 14px;">${message}</p>
                     </div>

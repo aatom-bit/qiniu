@@ -93,9 +93,9 @@ function parseCommands(commands) {
 
 function maskSensitiveInfo(text) {
     if (!text) return "";
-    // 匹配 [sudo] password... 直到该行结束
     return text.replace(/([Pp]assword.*:|[密码]*：)[^\r\n]*/g, '$1 ************');
 }
+
 class AdvancedTerminal extends EventEmitter {
     constructor(getPasswordEvent = null) {
         super();
@@ -104,7 +104,7 @@ class AdvancedTerminal extends EventEmitter {
         this.processDoneCallbacks = []; // 命令执行完成回调
         this.processErrorCallbacks = []; // 命令错误回调
         this.history = [];
-        this.ANSI_REGEX = /[\u001b\u009b]\[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-a-zA-Z]/g;
+        this.ANSI_REGEX = /\u001b\[[0-9;]*[mGJKHF]/g;
         this.preFilledPassword = null; // 预存密码
         this.lastSentPassword = null; // 记录最后一次发送的密码用于过滤
         this.setupReadline();
@@ -276,17 +276,18 @@ class AdvancedTerminal extends EventEmitter {
 
         // 检查是否含有管理员命令
         let hasSudoCommand = containSudoCommand(command);
-        let commandLines = parseCommands(command);
+        // let commandLines = parseCommands(command);
 
         // 如果是sudo命令且尚未验证权限，预先获取权限
         if (hasSudoCommand && !procInfo.allow) {
             console.log(`🔐 检测到sudo命令，预先获取权限: ${command}`);
 
             try {
-                const password = await this.fetchPassword(`进程 ${processId} 需要sudo权限执行: ${command}`);
+                const password = await this.fetchPassword(command, `进程 ${processId} 需要sudo权限执行: ${command}`);
 
                 if (password) {
                     procInfo.allow = true;
+                    this.preFilledPassword = password;
                     console.log('✅ 已获取sudo权限');
                 } else {
                     console.log('❌ 未获取sudo权限，命令取消');
@@ -348,7 +349,7 @@ class AdvancedTerminal extends EventEmitter {
                 console.log('\n⏰ 命令执行超时，但进程仍在运行');
                 this.notifyCommandCompletion(processId, procInfo, command, 'timeout');
                 resolve({ status: 'timeout', output: '' });
-            }, 300000); // 5分钟超时
+            }, 60000); // 1分钟超时
 
             const onComplete = (result = {}) => {
                 clearTimeout(timeoutId);
@@ -437,11 +438,19 @@ class AdvancedTerminal extends EventEmitter {
 
         // 3. 改进的匹配模式
         const promptPatterns = [
-            /[$#%>]\s*$/,                         // 基础符号: $, #, %, >
+            /[$#>] $/,                            // 基础符号: $, #, %, >
             /[\w.-]+@[\w.-]+:.*[$#%]\s*$/,        // 标准 Linux: user@host:path$
             /\[.*\]\s*[$#%]\s*$/,                 // 带中括号的提示符: [user@host path]$
             /PS [A-Z]:\\.*>\s*$/,                 // Windows PowerShell
-            /bash-\d+\.\d+[$#]\s*$/               // 特殊 Bash 版本
+            /bash-\d+\.\d+[$#]\s*$/,              // 特殊 Bash 版本
+            /.*@\w+:.*[$#%]\s*$/,                 // 更宽泛的user@host格式
+            /\w+@\w+:.*[$#%]\s*$/,                // 简单user@host
+            /.*>\s*$/,                            // 简单的>
+            /.*\$\s*$/,                           // 简单的$
+            /.*#\s*$/,                            // 简单的#
+            /.*%\s*$/,                            // 简单的%
+            /\(base\)\s*.*@\w+:.*[$#%]\s*$/,      // conda环境
+            /\(\w+\)\s*.*@\w+:.*[$#%]\s*$/        // 其他虚拟环境
         ];
 
         const isMatch = promptPatterns.some(pattern => pattern.test(lastLine));
@@ -584,13 +593,15 @@ class AdvancedTerminal extends EventEmitter {
         });
     }
 
-    handlePasswordError(procInfo) {
+    async handlePasswordError(procInfo, ptyProcess, processId) {
         this.preFilledPassword = null; // 清除预填充密码，防止重复使用错误密码
         console.log('\n❌ 密码错误，请重新获取密码');
         procInfo.isWaitingForPassword = true;
+        await this.handlePasswordPrompt(ptyProcess, procInfo, processId, true);
+        procInfo.isHandlingPassword = false;
     }
 
-    async handlePasswordPrompt(ptyProcess, procInfo, processId) {
+    async handlePasswordPrompt(ptyProcess, procInfo, processId, retry = false) {
         procInfo.passwordAttempts++;
         if (procInfo.passwordAttempts > 3) {
             console.log('\n❌ 密码尝试次数过多，已放弃命令执行');
@@ -602,7 +613,7 @@ class AdvancedTerminal extends EventEmitter {
         console.log('\n🔐 检测到密码输入提示...');
 
         try {
-            const password = await this.fetchPassword(`进程 ${processId} 需要sudo权限`);
+            const password = await this.fetchPassword(null, `进程 ${processId} 需要sudo权限`, retry);
 
             if (password) {
                 this.lastSentPassword = password; // 存入过滤器
@@ -627,7 +638,7 @@ class AdvancedTerminal extends EventEmitter {
 
         // 检测密码错误
         if (this.isPasswordError(cleanData)) {
-            this.handlePasswordError(procInfo);
+            this.handlePasswordError(procInfo, ptyProcess, processId);
             return;
         }
 
@@ -647,7 +658,7 @@ class AdvancedTerminal extends EventEmitter {
                     setTimeout(() => {
                         procInfo.isHandlingPassword = false;
                         this.lastSentPassword = null;
-                    }, 1000);
+                    }, 3000);
                 }, 100);
             } else {
                 await this.handlePasswordPrompt(ptyProcess, procInfo, processId);
@@ -664,52 +675,85 @@ class AdvancedTerminal extends EventEmitter {
 
         // 检测命令完成
         // 只要 initialPromptReceived 为 true，我们就不断尝试检测 outputBuffer
-        if (procInfo.initialPromptReceived && procInfo.expectingCommandOutput) {
-            // 使用整个 outputBuffer 进行判定，防止提示符被切割在两个 data 事件中
-            if (this.isPtyCommandComplete(outputBuffer, procInfo)) {
-                this.handlePtyCommandComplete(procInfo, outputBuffer, processId);
+        // if (procInfo.initialPromptReceived && procInfo.expectingCommandOutput) {
+        //     // 使用整个 outputBuffer 进行判定，防止提示符被切割在两个 data 事件中
+        //     if (this.isPtyCommandComplete(outputBuffer, procInfo)) {
+        //         this.handlePtyCommandComplete(procInfo, outputBuffer, processId);
+        //     }
+        // }
+
+        if (procInfo.expectingCommandOutput && !procInfo.isHandlingPassword && !procInfo.isWaitingForConfirmation) {
+            // 使用整个 processesOutput 判定，因为它已经被我们清理并持续累加
+            if (this.isShellPrompt(procInfo.processesOutput)) {
+                // 额外检查：确保不是刚刚发送的命令回显
+                const lines = procInfo.processesOutput.replace(this.ANSI_REGEX, '').split('\n');
+                if (lines.length > 1) { // 如果只有一行，通常是命令回显本身
+                    this.handlePtyCommandComplete(procInfo, procInfo.processesOutput, processId);
+                }
             }
         }
+
+        // if (
+        //     procInfo.expectingCommandOutput &&
+        //     !procInfo.isHandlingPassword &&
+        //     !procInfo.isWaitingForConfirmation &&
+        //     this.isCommandComplete(procInfo.processesOutput)
+        // ) {
+        //     this.handlePtyCommandComplete(procInfo, procInfo.processesOutput, processId);
+        // }
     }
 
     handleInitialPrompt(ptyProcess, procInfo, processId, command) {
         setTimeout(() => {
             console.log(`\n🔧 [${processId}] 执行命令: ${command}`);
+
+            // --- 核心修复：发送命令前重置所有状态和缓冲区 ---
+            procInfo.processesOutput = '';
+            procInfo.expectingCommandOutput = true;
+            procInfo.commandComplete = false;
+
             ptyProcess.write(command + '\r\n');
             procInfo.userInputEnabled = false;
             procInfo.initialPromptReceived = true;
-            procInfo.expectingCommandOutput = true;  // 开始等待命令输出
             this.updatePrompt();
         }, 100);
     }
 
     setupPtyEventListeners(ptyProcess, procInfo, processId, command) {
         let outputBuffer = '';
-        let isFirstPrompt = true;
+        let startupBuffer = '';
+        let started = false;
 
-        // PTY 数据输出处理
         ptyProcess.onData(async (data) => {
-            const sanitizedData = this.filterSensitiveData(data, procInfo); // 脱敏化
+            const sanitizedData = this.filterSensitiveData(data, procInfo);
 
             outputBuffer += sanitizedData;
             procInfo.processesOutput += sanitizedData;
-            // 实时显示输出
             process.stdout.write(sanitizedData);
 
-            // 处理初始提示符
-            if (isFirstPrompt && this.isShellPrompt(data)) {
-                isFirstPrompt = false;
-                this.handleInitialPrompt(ptyProcess, procInfo, processId, command);
+            if (procInfo.processesOutput.length > 10000) {
+                procInfo.processesOutput =
+                    procInfo.processesOutput.slice(-8000);
+            }
+
+            if (!started) {
+                startupBuffer += data;
+                if (this.isShellPrompt(startupBuffer)) {
+                    started = true;
+                    this.handleInitialPrompt(ptyProcess, procInfo, processId, command);
+                }
                 return;
             }
 
-            // 处理交互式输出 - 只有在初始提示符已接收后才处理
-            if (procInfo.initialPromptReceived) {
-                await this.handlePtyInteractiveOutput(ptyProcess, procInfo, processId, data, outputBuffer);
-            }
+            await this.handlePtyInteractiveOutput(
+                ptyProcess,
+                procInfo,
+                processId,
+                data,
+                outputBuffer
+            );
         });
 
-        // 进程退出处理
         ptyProcess.onExit(({ exitCode, signal }) => {
             this.handlePtyProcessExit(ptyProcess, procInfo, processId, exitCode, outputBuffer);
         });
@@ -767,9 +811,9 @@ class AdvancedTerminal extends EventEmitter {
     }
 
     isPasswordPrompt(data) {
-        // 移除颜色代码后再匹配
-        const cleanData = data.replace(/\x1B\[[0-9;]*[mGJKHF]/g, '');
-        const promptRegex = /[Pp]assword|密码|[sudo].*:/;
+        const cleanData = data.replace(this.ANSI_REGEX, '');
+        const promptRegex =
+            /(?:\[sudo\]\s+password(?:\s+for\s+\S+)?\s*:|[Pp]assword\s*[:：]?|密码\s*[:：]?)/;
         return promptRegex.test(cleanData);
     }
 
@@ -777,53 +821,67 @@ class AdvancedTerminal extends EventEmitter {
         return data.includes('Sorry, try again') || data.includes('incorrect password');
     }
 
-    isPtyCommandComplete(output, procInfo) {
+    // isPtyCommandComplete(output, procInfo) {
+    //     if (procInfo.isWaitingForPassword || procInfo.isWaitingForConfirmation || procInfo.isHandlingPassword) {
+    //         return false;
+    //     }
+
+    //     // 1. 彻底清洗数据
+    //     const cleanOutput = output.replace(this.ANSI_REGEX, '');
+    //     const lines = cleanOutput.split(/\r?\n/);
+
+    //     // 找到最后一个非空行
+    //     let lastLine = "";
+    //     for (let i = lines.length - 1; i >= 0; i--) {
+    //         if (lines[i].trim()) {
+    //             lastLine = lines[i].trim();
+    //             break;
+    //         }
+    //     }
+
+    //     if (!lastLine) return false;
+
+    //     // 2. 增强的提示符特征匹配 (不仅仅是 @ 和 :)
+    //     // 匹配常见的提示符结尾：$, #, >, %, 以及一些带路径的结尾
+    //     const promptPatterns = [
+    //         /[$#%>]\s*$/,                         // 基础符号
+    //         /[\w.-]+@[\w.-]+:.*[$#%]\s*$/,        // 标准 Linux user@host
+    //         /\[.*\]\s*[$#%]\s*$/,                 // [user@host]类型
+    //         /PS [A-Z]:\\.*>\s*$/                  // Windows
+    //     ];
+
+    //     const isPrompt = promptPatterns.some(pattern => pattern.test(lastLine));
+
+    //     // 调试日志：如果已经接收到了初始提示符且正在等待输出，但在匹配中
+    //     if (procInfo.expectingCommandOutput && isPrompt) {
+    //         return true;
+    //     }
+
+    //     return false;
+    // }
+
+    isPtyCommandComplete(allOutput, procInfo) {
         if (procInfo.isWaitingForPassword || procInfo.isWaitingForConfirmation || procInfo.isHandlingPassword) {
             return false;
         }
+        const clean = allOutput.replace(this.ANSI_REGEX, '');
+        const lines = clean.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length === 0) return false;
 
-        // 1. 彻底清洗数据
-        const cleanOutput = output.replace(this.ANSI_REGEX, '');
-        const lines = cleanOutput.split(/\r?\n/);
-
-        // 找到最后一个非空行
-        let lastLine = "";
-        for (let i = lines.length - 1; i >= 0; i--) {
-            if (lines[i].trim()) {
-                lastLine = lines[i].trim();
-                break;
-            }
-        }
-
-        if (!lastLine) return false;
-
-        // 2. 增强的提示符特征匹配 (不仅仅是 @ 和 :)
-        // 匹配常见的提示符结尾：$, #, >, %, 以及一些带路径的结尾
-        const promptPatterns = [
-            /[$#%>]\s*$/,                         // 基础符号
-            /[\w.-]+@[\w.-]+:.*[$#%]\s*$/,        // 标准 Linux user@host
-            /\[.*\]\s*[$#%]\s*$/,                 // [user@host]类型
-            /PS [A-Z]:\\.*>\s*$/                  // Windows
-        ];
-
-        const isPrompt = promptPatterns.some(pattern => pattern.test(lastLine));
-
-        // 调试日志：如果已经接收到了初始提示符且正在等待输出，但在匹配中
-        if (procInfo.expectingCommandOutput && isPrompt) {
-            return true;
-        }
-
-        return false;
+        const lastLine = lines[lines.length - 1];
+        return this.isShellPrompt(lastLine);
     }
 
 
-    async fetchPassword(prompt) {
+    async fetchPassword(command = '', prompt = '', retry = false) {
         if (this.getPasswordFromConsole) {
-            // 使用控制台输入方式（原来的方式）
+            // 终端输入模式
             return await this.getPasswordFromConsoleInput(prompt);
+
         } else {
-            // 使用新的密码获取方式（弹窗等）
-            return await this.getPasswordFromExternal(prompt);
+            // UI弹窗模式
+            return await this.getPasswordFromExternal(command, prompt, retry);
+
         }
     }
 
@@ -873,44 +931,35 @@ class AdvancedTerminal extends EventEmitter {
 
     // 附加到运行中进程的IO
     attachToProcess(processId) {
+        const procInfo = this.processes.get(processId);
+        if (!procInfo || !procInfo.process) {
+            console.log(`❌ 未找到进程: ${processId}`);
+            this.rl.prompt();
+            return;
+        }
+
         console.log('📡 开始监听 PTY 进程输出 (按 Ctrl+C 停止监听)...');
 
-        const onData = (data) => {
+        const dataListener = procInfo.process.onData((data) => {
             process.stdout.write(data);
+        });
+
+        const stdinHandler = (chunk) => {
+            procInfo.process.write(chunk.toString());
         };
 
+        const sigintHandler = () => cleanup();
+
         const cleanup = () => {
-            procInfo.process.removeListener('data', onData);
-            process.removeListener('SIGINT', sigintHandler);
+            dataListener.dispose?.();
+            process.stdin.off('data', stdinHandler);
+            process.off('SIGINT', sigintHandler);
             console.log(`\n🔓 已从 PTY 进程 ${processId} 分离`);
             this.rl.prompt();
         };
 
-        const sigintHandler = () => {
-            cleanup();
-        };
-
-        // 监听 PTY 输出
-        procInfo.process.on('data', onData);
-
-        // 设置用户输入转发
-        const originalWrite = process.stdout.write;
-        process.stdout.write = (data) => {
-            // 避免循环
-            if (!data.includes('🔗') && !data.includes('🔓')) {
-                procInfo.process.write(data);
-            }
-        };
-
-        // 监听 Ctrl+C
+        process.stdin.on('data', stdinHandler);
         process.on('SIGINT', sigintHandler);
-
-        // 恢复原始 write 函数当分离时
-        const originalCleanup = cleanup;
-        cleanup = () => {
-            process.stdout.write = originalWrite;
-            originalCleanup();
-        };
     }
 
     // 从进程分离
@@ -1089,7 +1138,8 @@ class AdvancedTerminal extends EventEmitter {
 
         // 激活回调
         this.processDoneCallbacks.forEach(callback => {
-            callback(processId, processFinData);
+            // callback(processId, processFinData); // 确定这里返回值
+            callback(processId, processFinData, procInfo.processesOutput);
         });
     }
 
@@ -1117,9 +1167,9 @@ class AdvancedTerminal extends EventEmitter {
         this.setUserInputEnabled(processId, true);
 
         // 激活回调
-        this.processDoneCallbacks.forEach(callback => {
-            callback(processId, processFinData);
-        });
+        // this.processDoneCallbacks.forEach(callback => {
+        //     callback(processId, processFinData, procInfo.processesOutput);
+        // });
     }
 
     processDoneCallbacksAddListener(event) {
