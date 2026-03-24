@@ -5,6 +5,10 @@ const EventEmitter = require('events');
 const process = require('process');
 const pty = require('@lydell/node-pty');
 
+const log = require('electron-log');
+console.log = log.info;
+console.error = log.error;
+
 function containSudoCommand(commands) {
     if (!commands || typeof commands !== 'string') {
         return false;
@@ -658,7 +662,7 @@ class AdvancedTerminal extends EventEmitter {
                     setTimeout(() => {
                         procInfo.isHandlingPassword = false;
                         this.lastSentPassword = null;
-                    }, 3000);
+                    }, 30000);
                 }, 100);
             } else {
                 await this.handlePasswordPrompt(ptyProcess, procInfo, processId);
@@ -667,55 +671,71 @@ class AdvancedTerminal extends EventEmitter {
             return;
         }
 
-        // 检测交互确认
-        if (this.isConfirmationPrompt(cleanData) && !procInfo.isWaitingForConfirmation) {
+        // 检测交互确认 - 检查原始数据和清洗后的数据
+        if ((this.isConfirmationPrompt(cleanData) || this.isConfirmationPrompt(data)) && !procInfo.isWaitingForConfirmation) {
             await this.handleConfirmationPrompt(ptyProcess, procInfo, cleanData);
             return;
         }
 
-        // 检测命令完成
-        // 只要 initialPromptReceived 为 true，我们就不断尝试检测 outputBuffer
-        // if (procInfo.initialPromptReceived && procInfo.expectingCommandOutput) {
-        //     // 使用整个 outputBuffer 进行判定，防止提示符被切割在两个 data 事件中
-        //     if (this.isPtyCommandComplete(outputBuffer, procInfo)) {
-        //         this.handlePtyCommandComplete(procInfo, outputBuffer, processId);
-        //     }
-        // }
-
+        // 检测命令完成 - 只在大量输出后检测提示符，避免误判
         if (procInfo.expectingCommandOutput && !procInfo.isHandlingPassword && !procInfo.isWaitingForConfirmation) {
-            // 使用整个 processesOutput 判定，因为它已经被我们清理并持续累加
-            if (this.isShellPrompt(procInfo.processesOutput)) {
-                // 额外检查：确保不是刚刚发送的命令回显
-                const lines = procInfo.processesOutput.replace(this.ANSI_REGEX, '').split('\n');
-                if (lines.length > 1) { // 如果只有一行，通常是命令回显本身
-                    this.handlePtyCommandComplete(procInfo, procInfo.processesOutput, processId);
+            // 只在接收到足够的数据后才尝试检测完成
+            const cleanOutput = procInfo.processesOutput.replace(this.ANSI_REGEX, '');
+            
+            // 需要至少包含命令回显 + 命令输出 + 提示符（3行以上）
+            const lines = cleanOutput.split(/\r?\n/);
+            
+            if (lines.length > 3) {
+                // 检查最后一行是否是 shell 提示符
+                if (this.isShellPrompt(procInfo.processesOutput)) {
+                    // 额外验证：最后一个非空行应该是提示符
+                    let lastNonEmptyLineIndex = -1;
+                    let lastNonEmptyLine = '';
+                    
+                    for (let i = lines.length - 1; i >= 0; i--) {
+                        if (lines[i].trim()) {
+                            lastNonEmptyLineIndex = i;
+                            lastNonEmptyLine = lines[i].trim();
+                            break;
+                        }
+                    }
+                    
+                    // 提示符应该在输出的最后，且不应该太接近命令日志
+                    if (lastNonEmptyLineIndex > 1 && 
+                        (lastNonEmptyLine === '$' || /^[$#%>]\s*$/.test(lastNonEmptyLine) || lastNonEmptyLine.endsWith('$ '))) {
+                        
+                        // 防止在刚发送命令后立即触发（需要至少有一些输出）
+                        const commandPlus = procInfo.lastCommand ? procInfo.lastCommand.length : 0;
+                        if (cleanOutput.length > commandPlus + 50) {
+                            this.handlePtyCommandComplete(procInfo, procInfo.processesOutput, processId);
+                        }
+                    }
                 }
             }
         }
-
-        // if (
-        //     procInfo.expectingCommandOutput &&
-        //     !procInfo.isHandlingPassword &&
-        //     !procInfo.isWaitingForConfirmation &&
-        //     this.isCommandComplete(procInfo.processesOutput)
-        // ) {
-        //     this.handlePtyCommandComplete(procInfo, procInfo.processesOutput, processId);
-        // }
     }
 
     handleInitialPrompt(ptyProcess, procInfo, processId, command) {
         setTimeout(() => {
-            console.log(`\n🔧 [${processId}] 执行命令: ${command}`);
+            // 配置 shell 环境以禁用不必要的回显和提示
+            const initCommand = 'set +H; PS1="$ "';  // 禁用历史展开，简化 PS1
+            
+            ptyProcess.write(initCommand + '\r\n');
+            
+            // 等待配置生效
+            setTimeout(() => {
+                // --- 核心修复：发送命令前重置所有状态和缓冲区 ---
+                procInfo.processesOutput = '';
+                procInfo.expectingCommandOutput = true;
+                procInfo.commandComplete = false;
 
-            // --- 核心修复：发送命令前重置所有状态和缓冲区 ---
-            procInfo.processesOutput = '';
-            procInfo.expectingCommandOutput = true;
-            procInfo.commandComplete = false;
-
-            ptyProcess.write(command + '\r\n');
-            procInfo.userInputEnabled = false;
-            procInfo.initialPromptReceived = true;
-            this.updatePrompt();
+                // 分解复合命令，逐个发送（防止 && 导致的回显问题）
+                // 但如果用户明确使用了 &&，保留原样发送
+                ptyProcess.write(command + '\r\n');
+                procInfo.userInputEnabled = false;
+                procInfo.initialPromptReceived = true;
+                this.updatePrompt();
+            }, 150);
         }, 100);
     }
 
@@ -723,12 +743,14 @@ class AdvancedTerminal extends EventEmitter {
         let outputBuffer = '';
         let startupBuffer = '';
         let started = false;
+        let lastPasswordPromptTime = 0;
 
         ptyProcess.onData(async (data) => {
             const sanitizedData = this.filterSensitiveData(data, procInfo);
 
             outputBuffer += sanitizedData;
             procInfo.processesOutput += sanitizedData;
+            // console.log(sanitizedData);
             process.stdout.write(sanitizedData);
 
             if (procInfo.processesOutput.length > 10000) {
@@ -743,6 +765,18 @@ class AdvancedTerminal extends EventEmitter {
                     this.handleInitialPrompt(ptyProcess, procInfo, processId, command);
                 }
                 return;
+            }
+
+            // 检测密码提示，防止被后续回显干扰
+            const cleanData = sanitizedData.replace(this.ANSI_REGEX, '');
+            if (this.isPasswordPrompt(cleanData)) {
+                const now = Date.now();
+                // 防止在短时间内重复触发（避免从缓冲区中重复读取同一个提示）
+                if (now - lastPasswordPromptTime > 500) {
+                    lastPasswordPromptTime = now;
+                    // 清除输出缓冲区中可能存在的后续命令回显
+                    outputBuffer = outputBuffer.substring(Math.max(0, outputBuffer.lastIndexOf('\n') - 200));
+                }
             }
 
             await this.handlePtyInteractiveOutput(
@@ -779,7 +813,9 @@ class AdvancedTerminal extends EventEmitter {
             commandComplete: false,
             pty: true,
             initialPromptReceived: false,
-            expectingCommandOutput: false  // 新增：期待命令输出状态
+            expectingCommandOutput: false,  // 新增：期待命令输出状态
+            lastPasswordAttemptTime: 0,     // 新增：上次密码尝试时间，防止重复处理
+            isHandlingPasswordError: false, // 新增：标记是否正在处理密码错误
         };
 
         // 继承 EventEmitter
@@ -800,12 +836,18 @@ class AdvancedTerminal extends EventEmitter {
                 env: process.env
             });
         } else {
+            // 启用 bash 非交互模式的初始化，但保持交互性
             return pty.spawn('/bin/bash', ['-i'], {
                 name: 'xterm-color',
                 cols: 80,
                 rows: 30,
                 cwd: process.cwd(),
-                env: process.env
+                env: {
+                    ...process.env,
+                    // 优化终端环境，减少不必要的回显
+                    PROMPT_COMMAND: '',
+                    PS1: '$ '
+                }
             });
         }
     }
@@ -1038,6 +1080,11 @@ class AdvancedTerminal extends EventEmitter {
     // 交互式确认提示检测方法
     isConfirmationPrompt(output) {
         const confirmationPatterns = [
+            // apt-get 相关确认
+            /\[Y\/n\]/,                           // apt-get remove/install 确认
+            /\[y\/N\]/,                           // 默认否的确认
+            /\(Y\/n\)/,                           // 括号版本
+            /\(y\/N\)/,                           // 括号版本
             /Do you want to continue\?.*\[Y\/n\]/i,
             /Continue\?.*\[y\/N\]/i,
             /Proceed\?.*\[y\/N\]/i,
@@ -1049,7 +1096,11 @@ class AdvancedTerminal extends EventEmitter {
             /Hit Enter to continue/,
             /Type 'yes' to continue/,
             /Enter YES to continue/i,
-            /Do you want to abort\?/i
+            /Do you want to abort\?/i,
+            /yes\/no/i,                           // 手动输入 yes/no
+            /^\s*\[Y.*n\]\s*$/,                   // 任何括号确认提示
+            /Setting up/,                         // apt installation phase
+            /warning.*continue/i,                 // 警告确认
         ];
 
         for (const pattern of confirmationPatterns) {

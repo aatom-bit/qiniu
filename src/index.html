@@ -641,7 +641,8 @@
         let state = {
             history: [],
             currentSessionIndex: 0,
-            loading: false
+            loading: false,
+            detailMode: false  // 详细模式开关
         };
 
         const msgContainer = document.getElementById('messages-container');
@@ -785,7 +786,43 @@
                     }
                 });
             } else {
-                innerHTML += content.replace(/\n/g, '<br>');
+                // AI 消息：处理简化/详细模式
+                if (role === 'assistant') {
+                    const { simplified, detailed, hasDetail } = parseAIResponse(content);
+                    innerHTML += simplified;
+                    
+                    // 如果有详细信息，添加展开按钮
+                    if (hasDetail) {
+                        const detailId = 'detail-' + Date.now() + Math.random().toString(36);
+                        innerHTML += `
+                        <div style="margin-top: 12px;">
+                            <button class="detail-toggle-btn" onclick="toggleDetail('${detailId}')" style="
+                                background: var(--accent);
+                                color: white;
+                                border: none;
+                                padding: 4px 12px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-size: 12px;
+                                font-weight: 500;
+                            ">📋 查看详细过程</button>
+                        </div>
+                        <div id="${detailId}" class="detail-content" style="
+                            display: none;
+                            margin-top: 12px;
+                            padding: 12px;
+                            background: var(--bg-card);
+                            border-radius: 6px;
+                            border-left: 3px solid var(--accent);
+                            font-size: 13px;
+                            line-height: 1.5;
+                        ">
+                            ${detailed}
+                        </div>`;
+                    }
+                } else {
+                    innerHTML += content.replace(/\n/g, '<br>');
+                }
             }
 
             innerHTML += `</div>`;
@@ -793,6 +830,110 @@
             document.getElementById('messages-container').appendChild(msgDiv);
             setTimeout(scrollToBottom, 50);
         }
+
+        // 解析 AI 响应，分离简化版和详细版
+        function parseAIResponse(content) {
+            // 检查是否包含分隔符（详细信息标记）
+            const hasSeparator = content.includes('---') && content.includes('📋');
+            
+            if (!hasSeparator) {
+                // 没有详细信息，直接返回原内容
+                return {
+                    simplified: content.replace(/\n/g, '<br>'),
+                    detailed: '',
+                    hasDetail: false
+                };
+            }
+
+            // 分离简化版和详细版
+            const parts = content.split('---');
+            const simplified = parts[0].trim().replace(/\n/g, '<br>');
+            const detailedPart = parts.slice(1).join('---').trim();
+
+            // 简化详细部分的显示
+            const detailedFormatted = formatDetailedSection(detailedPart);
+
+            return {
+                simplified: simplified,
+                detailed: detailedFormatted,
+                hasDetail: true
+            };
+        }
+
+        // 格式化详细部分
+        function formatDetailedSection(detailedText) {
+            if (!detailedText || !detailedText.trim()) {
+                return '<div>暂无详细信息</div>';
+            }
+
+            // 分离代码块和文本
+            let html = '';
+            const parts = detailedText.split(/```/);
+            
+            for (let i = 0; i < parts.length; i++) {
+                if (i % 2 === 0) {
+                    // 普通文本部分
+                    const text = parts[i].trim();
+                    if (text) {
+                        html += `<div>${text.replace(/\n/g, '<br>')}</div>`;
+                    }
+                } else {
+                    // 代码块部分
+                    const codeContent = parts[i];
+                    const lines = codeContent.split('\n');
+                    const firstLine = lines[0]; // 可能是语言标识
+                    
+                    let lang = 'shell';
+                    let codeText = codeContent;
+                    
+                    // 检查第一行是否是语言标识
+                    if (/^[a-zA-Z0-9\+\#]+$/.test(firstLine)) {
+                        lang = firstLine;
+                        codeText = lines.slice(1).join('\n').trim();
+                    }
+                    
+                    html += `<div style="
+                        background: #000; 
+                        padding: 8px 12px; 
+                        border-radius: 4px; 
+                        margin: 8px 0;
+                        font-family: 'Fira Code', monospace;
+                        font-size: 12px;
+                        line-height: 1.4;
+                        overflow-x: auto;
+                        color: #50fa7b;
+                    "><code>${formatAnsi(codeText)}</code></div>`;
+                }
+            }
+            
+            return html || '<div>暂无详细信息</div>';
+        }
+
+        // 切换详细信息显示
+        window.toggleDetail = function(detailId) {
+            const detailDiv = document.getElementById(detailId);
+            if (detailDiv) {
+                const isHidden = detailDiv.style.display === 'none';
+                detailDiv.style.display = isHidden ? 'block' : 'none';
+                
+                // 更新按钮文字
+                const btn = event.target.closest('.detail-toggle-btn');
+                if (btn) {
+                    btn.textContent = isHidden ? '📋 隐藏详细过程' : '📋 查看详细过程';
+                }
+            }
+        };
+
+        // 切换全局详细模式
+        window.toggleDetailMode = function() {
+            state.detailMode = !state.detailMode;
+            const detailBtn = document.getElementById('toggle-detail-btn');
+            if (detailBtn) {
+                detailBtn.style.borderColor = state.detailMode ? 'var(--accent)' : 'var(--border)';
+                detailBtn.style.color = state.detailMode ? 'var(--accent)' : 'var(--text-secondary)';
+            }
+            console.log(`📝 详细模式已${state.detailMode ? '启用' : '禁用'}`);
+        };
 
         // 交互功能
         async function send() {

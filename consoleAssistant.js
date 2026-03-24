@@ -53,6 +53,7 @@ class ConsoleAssistant {
             tryCount: 0,
             lastTask: null,
             lastTaskCategory: null,
+            iterationHistory: [], // 记录每次迭代的AI决策
         };
 
         this.consoles.set(key, console);
@@ -92,24 +93,24 @@ class ConsoleAssistant {
      * */
     async getConsoleTask(consoleInfo, task, taskCategory = null, correcting = false) {
         // 处理任务和任务类别
-        if (task && !correcting) {
-            // 只有在非纠正模式下才更新任务
-            consoleInfo.lastTask = task;
-        }
-        // else if (correcting && consoleInfo.lastTask) {
-        // 在纠正模式下，使用上次的任务，但当前 task 是命令输出
-        // 这里不需要更新 lastTask
-        // }
-        else {
+        // correcting=false时，task是用户的新需求；correcting=true时，task是命令输出
+        if (!task) {
             const errorLog = `error: consoleAssignTask fail: 没有可用的任务`;
             console.log(errorLog);
             return errorLog;
         }
 
+        if (!correcting) {
+            // 非纠正模式：更新lastTask为新的用户需求
+            consoleInfo.lastTask = task;
+        }
+        // 纠正模式：task是命令输出，不更新lastTask
+
         if (!taskCategory) {
             taskCategory = await this.getTaskCategory(consoleInfo.lastTask);
         }
         consoleInfo.taskCategory = taskCategory;
+        consoleInfo.lastTaskCategory = taskCategory;
 
         let command = await this._fetchRealCommand(consoleInfo, task, taskCategory, correcting);
         if (command.startsWith('error:')) {
@@ -166,10 +167,10 @@ class ConsoleAssistant {
             consoleInfo = this.consoles.get(consoleNum);
         }
 
-        // 如果是新任务（非纠正模式），重置计数器
+        // 如果是新任务（非纠正模式），重置计数器和历史记录
         if (!correcting) {
             consoleInfo.tryCount = 0;
-            consoleInfo.lastTask = task;
+            consoleInfo.iterationHistory = [];
         }
 
         // 生成第一条指令
@@ -179,15 +180,63 @@ class ConsoleAssistant {
             return command || 'error: 获取命令失败';
         }
 
+        // 记录第一次迭代
+        consoleInfo.iterationHistory.push({
+            step: 1,
+            type: 'ai_decision',
+            command: command,
+            timestamp: new Date().toISOString()
+        });
+
         // 如果 AI 直接说完成了
         if (command.includes('ass!done')) {
+            consoleInfo.iterationHistory.push({
+                step: 1,
+                type: 'task_complete',
+                reason: 'AI 直接判断任务已完成',
+                timestamp: new Date().toISOString()
+            });
             this.taskCompleteCallback.forEach(cb => cb(true, consoleNum));
-            return "### 任务完成\nAI 判断当前环境已满足需求。";
+            return `✅ 任务完成`;
         }
 
         // 启动第一次执行
         // 执行后，terminal 会触发 onCommandDone，从而进入上面的自动化循环
         return await this._executeCommandWithPermission(command, consoleInfo);
+    }
+
+    /**
+     * 格式化迭代结果，包含简化版和详细版
+     * @private
+     */
+    _formatIterationResult(consoleInfo, mainResult) {
+        if (consoleInfo.iterationHistory.length <= 1) {
+            return mainResult;
+        }
+
+        // 简化版结果
+        const taskDescription = consoleInfo.lastTask || '任务';
+        const stepCount = consoleInfo.iterationHistory.filter(h => h.type === 'ai_decision').length;
+        
+        let simplified = mainResult;
+        if (!simplified.includes('✅') && !simplified.includes('❌')) {
+            simplified = `✅ 任务完成\n\n📋 任务: ${taskDescription}`;
+            if (stepCount > 1) {
+                simplified += `\n🔄 执行步骤: ${stepCount} 步`;
+            }
+        }
+
+        // 详细版结果
+        let detailed = '### 📋 详细过程\n\n';
+        const decisions = consoleInfo.iterationHistory.filter(h => h.type === 'ai_decision');
+        
+        decisions.forEach((decision, idx) => {
+            detailed += `**第 ${idx + 1} 步 - 执行的命令:**\n`;
+            detailed += `\`\`\`sh\n${decision.command || decision.decision}\n\`\`\`\n\n`;
+        });
+
+        // 用分隔符连接简化版和详细版
+        return simplified + '\n\n---\n\n' + detailed;
     }
 
     /**
@@ -198,7 +247,6 @@ class ConsoleAssistant {
         const { containSudoCommand } = require('./AdvancedTerminal');
 
         let shouldExecute = false;
-        let executionResult = "";
         let prePassword = null;
 
         // 权限检查
@@ -206,14 +254,14 @@ class ConsoleAssistant {
             // sudo 命令：获取密码（密码即确认）
             prePassword = await this.getPassword(command);
             if (!prePassword) {
-                return `### 执行取消\n需要管理员密码才能执行此命令`;
+                return `❌ 执行取消\n需要管理员密码才能执行此命令`;
             }
             shouldExecute = true;
         } else {
             // 普通命令：获取用户确认
             const userConfirm = await this.getUserPermission(command);
             if (!userConfirm) {
-                return `### 执行取消\n命令: \n\`\`\`sh\n${command}\n\`\`\``;
+                return `⏸️ 执行取消`;
             }
             shouldExecute = true;
         }
@@ -224,17 +272,30 @@ class ConsoleAssistant {
                 let ret = await this.terminal.executeCommand(command, consoleInfo.processId, prePassword);
                 let output = ret?.output;
 
+                // 简化版和详细版
+                let simplified = output ? `✅ 命令执行完成` : `⚠️ 命令执行完成（无输出）`;
+                let detailed = `**执行的命令:**\n\`\`\`sh\n${command}\n\`\`\`\n\n`;
+                
                 if (output) {
-                    executionResult = `### 命令: \n\`\`\`sh\n${command}\n\`\`\`\n### 任务执行结果:\n\`\`\`sh\n${output || '无输出'}\n\`\`\``;
+                    // 只显示输出的前 200 字符作为简化摘要
+                    const preview = output.length > 200 ? output.substring(0, 200) + '...' : output;
+                    detailed += `**执行结果:**\n\`\`\`\n${output}\n\`\`\``;
                 } else {
-                    executionResult = `### 执行失败\n命令: \n\`\`\`sh\n${command}\n\`\`\``;
+                    detailed += `**执行结果:** (无输出)`;
+                }
+
+                // 多步时返回详细版，单步直接返回简化版
+                if (consoleInfo.iterationHistory.length > 1) {
+                    return simplified + '\n\n---\n\n' + detailed;
+                } else {
+                    return simplified;
                 }
             } catch (error) {
-                executionResult = `### 执行异常\n命令: \n\`\`\`sh\n${command}\n\`\`\`\n错误: ${error.message}`;
+                return `❌ 执行异常: ${error.message}`;
             }
         }
 
-        return executionResult;
+        return '';
     }
 
     // async onCommandDone(reflectionId, resultData, rawResult) {
@@ -280,9 +341,25 @@ class ConsoleAssistant {
         // 如果 AI 还没开始处理或者已经在处理中，防止竞态（可选）
         console.log(`\n[系统回旋] 正在分析第 ${consoleInfo.tryCount + 1} 步执行结果...`);
 
+        // 记录命令执行结果
+        const lastIterationStep = consoleInfo.iterationHistory.length;
+        consoleInfo.iterationHistory.push({
+            step: lastIterationStep,
+            type: 'command_output',
+            output: rawOutput.substring(0, 500), // 只保存前500字符避免数据过大
+            outputLength: rawOutput.length,
+            timestamp: new Date().toISOString()
+        });
+
         // 检查是否超过重试次数
         if (consoleInfo.tryCount >= this.maxRetry) {
             console.log(`❌ 达到最大自动化步骤限制 (${this.maxRetry}步)，停止执行。`);
+            consoleInfo.iterationHistory.push({
+                step: lastIterationStep + 1,
+                type: 'task_abort',
+                reason: '达到最大重试次数',
+                timestamp: new Date().toISOString()
+            });
             this.taskCompleteCallback.forEach(cb => cb(false, consoleNum));
             consoleInfo.tryCount = 0;
             return;
@@ -294,9 +371,21 @@ class ConsoleAssistant {
 
         // 增加尝试计数
         consoleInfo.tryCount++;
-
+        // 记录 AI 的决策
+        consoleInfo.iterationHistory.push({
+            step: consoleInfo.tryCount + 1,
+            type: 'ai_decision',
+            decision: nextStep,
+            timestamp: new Date().toISOString()
+        });
         if (nextStep.includes('ass!done')) {
             console.log(`✅ AI 确认任务 "${consoleInfo.lastTask}" 已圆满完成！`);
+            consoleInfo.iterationHistory.push({
+                step: consoleInfo.tryCount + 1,
+                type: 'task_complete',
+                reason: 'AI 确认任务完成',
+                timestamp: new Date().toISOString()
+            });
             this.taskCompleteCallback.forEach(cb => cb(true, consoleNum));
             consoleInfo.tryCount = 0; // 重置计数
         } else if (nextStep.startsWith('error:')) {
@@ -304,6 +393,12 @@ class ConsoleAssistant {
             // this.taskCompleteCallback.forEach(cb => cb(false, consoleNum));
 
             console.log(`⚠️ AI 返回异常，重新尝试 (${consoleInfo.tryCount}/${this.maxRetry})`);
+            consoleInfo.iterationHistory.push({
+                step: consoleInfo.tryCount + 1,
+                type: 'ai_error',
+                error: nextStep,
+                timestamp: new Date().toISOString()
+            });
 
             if (consoleInfo.tryCount < this.maxRetry) {
                 await this.consoleAssignTask(
@@ -314,6 +409,12 @@ class ConsoleAssistant {
                 );
             } else {
                 console.log(`❌ 达到最大重试次数`);
+                consoleInfo.iterationHistory.push({
+                    step: consoleInfo.tryCount + 1,
+                    type: 'task_abort',
+                    reason: 'AI 返回过多错误',
+                    timestamp: new Date().toISOString()
+                });
                 this.taskCompleteCallback.forEach(cb => cb(false, consoleNum));
             }
         } else {

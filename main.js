@@ -388,11 +388,11 @@ async function handleUserInput(content, sessionId, sessionCount = -1) {
             mainWin.webContents.send('update-status', { role: 'ai', content: `🚀 正在准备执行相关指令...` });
 
             // 直接调用 consoleAssignTask，由 ConsoleAssistant 处理所有权限和执行逻辑
-            aiFinalContent = await consoleAssistant.consoleAssignTask(sessionId, content);
+            aiFinalContent = await consoleAssistant.consoleAssignTask(sessionId, content) ?? `ai agent发生错误，请检查网络和配额`;
         } else {
             // 纯聊天内容
             let ret = await consoleAssistant.normalConversation(content);
-            aiFinalContent = ret ? ret : `ai agent发生错误`;
+            aiFinalContent = ret ? ret : `ai agent发生错误，请检查网络和配额`;
         }
     } catch (error) {
         aiFinalContent = `❌ 发生错误: ${error.message}`;
