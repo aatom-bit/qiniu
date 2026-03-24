@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getPkgInfo: (name) => ipcRenderer.invoke('pkg:getInfo', name),
     installPkg: (name) => ipcRenderer.invoke('pkg:install', name),
     removePkg: (name) => ipcRenderer.invoke('pkg:remove', name),
+
+    onCommandComplete: (callback) => ipcRenderer.on('command-complete', (_event, result) => callback(result)),
     
     // // 如果需要控制窗口移动或关闭，也可以暴露：
     //     moveWindow: (win, dx, dy) => {

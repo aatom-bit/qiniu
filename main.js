@@ -421,6 +421,15 @@ async function handleUserInput(content, sessionId, sessionCount = -1) {
 }
 
 function onCommandFinished(isCompelted, consoleNum) {
+    console.log(`任务完成回调: consoleNum=${consoleNum}, isCompleted=${isCompelted}`);
+    // 通知前端任务完成
+    if (mainWin && mainWin.webContents) {
+        mainWin.webContents.send('command-complete', { 
+            isCompleted: isCompelted,
+            consoleNum: consoleNum,
+            message: `任务 ${isCompelted ? '已完成' : '执行失败'}` 
+        });
+    }
     return `任务 ${isCompelted ? '已完成' : '执行失败'}`;
 }
 consoleAssistant.taskCompleteCallbackAddlistener(onCommandFinished.bind(this));

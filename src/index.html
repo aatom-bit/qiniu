@@ -1133,14 +1133,27 @@
             // 如果标题变化，刷新侧边栏标题
             renderHistory();
 
-            // 检测包管理操作是否完成（通过命令的特征判断）
+            // 检测包管理操作是否完成
             if (state.pkgOperation && role === 'assistant') {
-                const pkgKeywords = ['已卸载', '已安装', '完成', 'done', '已完成', '删除成功', '安装成功'];
-                const isCompletion = pkgKeywords.some(keyword => content.includes(keyword));
+                // 多种完成信号指示符
+                const completionPatterns = [
+                    /已(安装|卸载|删除)/,
+                    /成功(安装|卸载|删除)/,
+                    /✅|已完成|完成|任务已|done/i,
+                    /包.*?(安装|卸载|删除).*(成功|完成|已)/,
+                    /apt|npm|dnf|yum/.test(state.pkgOperation.command) && /done|done|complete/i
+                ];
+                
+                const isCompletion = completionPatterns.some(pattern => {
+                    if (pattern instanceof RegExp) {
+                        return pattern.test(content);
+                    }
+                    return false;
+                });
                 
                 if (isCompletion) {
-                    console.log(`✅ 检测到包操作完成信号`);
-                    setTimeout(() => completePkgOperation(), 1000);
+                    console.log(`✅ 检测到包操作完成信号，准备刷新列表`);
+                    setTimeout(() => completePkgOperation(), 800);
                 }
             }
         });
@@ -1555,8 +1568,8 @@
             <td style="color:var(--text-dim); font-family:monospace; font-size:12px;">${pkg.version || '--'}</td>
             <td style="text-align:center;">
                 ${isInstalled ?
-                        `<button class="pkg-action-btn btn-remove" onclick="handlePkgAction('${pkg.name}', 'remove')">－</button>` :
-                        `<button class="pkg-action-btn btn-install" onclick="handlePkgAction('${pkg.name}', 'install')">＋</button>`
+                        `<button class="pkg-action-btn btn-remove" data-pkg-name="${pkg.name}" onclick="handlePkgAction('${pkg.name}', 'remove')">－</button>` :
+                        `<button class="pkg-action-btn btn-install" data-pkg-name="${pkg.name}" onclick="handlePkgAction('${pkg.name}', 'install')">＋</button>`
                     }
             </td>
         `;
@@ -1567,6 +1580,7 @@
 
         // 跟踪包管理操作状态
         state.pkgOperation = null; // 存储正在进行的包操作信息
+        state.pkgOperationTimeout = null; // 超时定时器
 
         // 处理安装和卸载
         window.handlePkgAction = async (name, action) => {
@@ -1590,6 +1604,14 @@
 
             // 执行命令（自动处理 sudo 弹窗）
             await window.electronAPI.runCommand(command, state.currentSessionIndex);
+
+            // 设置超时自动刷新（如果60秒还没完成，强制刷新）
+            state.pkgOperationTimeout = setTimeout(() => {
+                if (state.pkgOperation) {
+                    console.log(`⏱️ 包管理操作超时，强制刷新`);
+                    completePkgOperation();
+                }
+            }, 60000);
         };
 
         function showPkgOperationProgress(name, action) {
@@ -1605,6 +1627,12 @@
         }
 
         function completePkgOperation() {
+            // 清理超时定时器
+            if (state.pkgOperationTimeout) {
+                clearTimeout(state.pkgOperationTimeout);
+                state.pkgOperationTimeout = null;
+            }
+
             // 恢复所有按钮状态
             const actionBtns = document.querySelectorAll('.pkg-action-btn');
             actionBtns.forEach(btn => {
@@ -1614,9 +1642,17 @@
 
             // 自动刷新包列表
             if (state.pkgOperation) {
-                console.log(`✅ 包管理操作完成: ${state.pkgOperation.action} ${state.pkgOperation.name}`);
+                const opName = state.pkgOperation.name;
+                const opAction = state.pkgOperation.action;
+                console.log(`✅ 包管理操作完成: ${opAction} ${opName}`);
                 state.pkgOperation = null;
-                loadPackages();
+                
+                // 显示完成提示并刷新
+                const pkgView = document.getElementById('package-manager-view');
+                if (pkgView && pkgView.style.display !== 'none') {
+                    console.log(`🔄 正在刷新包列表...`);
+                    loadPackages();
+                }
             }
         }
         async function selectPkg(pkg, trElement) {
@@ -1670,6 +1706,9 @@
                 setTimeout(() => completePkgOperation(), 500);
             }
         });
+        
+        // 标签切换
+        document.getElementById('tab-installed').onclick = function () {
             state.pkgMode = 'installed';
             this.classList.add('active');
             document.getElementById('tab-all').classList.remove('active');

@@ -388,6 +388,7 @@ class ConsoleAssistant {
             });
             this.taskCompleteCallback.forEach(cb => cb(true, consoleNum));
             consoleInfo.tryCount = 0; // 重置计数
+            return;
         } else if (nextStep.startsWith('error:')) {
             // console.log(`❌ 自动化链条断裂: ${nextStep}`);
             // this.taskCompleteCallback.forEach(cb => cb(false, consoleNum));
