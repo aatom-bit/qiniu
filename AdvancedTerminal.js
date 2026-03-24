@@ -461,7 +461,7 @@ class AdvancedTerminal extends EventEmitter {
 
         // 调试日志：如果没匹配上，看看最后一行到底长什么样
         if (!isMatch && lastLine.length > 0) {
-            // console.log(`DEBUG: Last line content: "${lastLine}" (No match)`);
+            console.log(`DEBUG: Last line content: "${lastLine}" (No match)`);
         }
 
         return isMatch;
@@ -598,8 +598,21 @@ class AdvancedTerminal extends EventEmitter {
     }
 
     async handlePasswordError(procInfo, ptyProcess, processId) {
+        // 增加密码错误计数
+        procInfo.passwordErrorCount++;
+
+        // 如果是第一次密码错误，忽略并继续等待下一个密码提示
+        if (procInfo.passwordErrorCount === 1) {
+            console.log('\n⚠️ 检测到密码错误，自动忽略第一次尝试...');
+            procInfo.isHandlingPassword = false;
+            // 清除标记，让系统继续等待下一个密码提示
+            this.preFilledPassword = null;
+            return;
+        }
+
+        // 第二次及以后的密码错误才向用户询问
         this.preFilledPassword = null; // 清除预填充密码，防止重复使用错误密码
-        console.log('\n❌ 密码错误，请重新获取密码');
+        console.log(`\n❌ 密码错误 (第 ${procInfo.passwordErrorCount} 次)，请重新获取密码`);
         procInfo.isWaitingForPassword = true;
         await this.handlePasswordPrompt(ptyProcess, procInfo, processId, true);
         procInfo.isHandlingPassword = false;
@@ -650,6 +663,8 @@ class AdvancedTerminal extends EventEmitter {
         if (this.isPasswordPrompt(cleanData)) {
             if (procInfo.isHandlingPassword) return;
             procInfo.isHandlingPassword = true;
+            // 重置密码错误计数，为新的密码输入做准备
+            procInfo.passwordErrorCount = 0;
 
             const password = this.preFilledPassword;
             if (password) {
@@ -813,9 +828,10 @@ class AdvancedTerminal extends EventEmitter {
             commandComplete: false,
             pty: true,
             initialPromptReceived: false,
-            expectingCommandOutput: false,  // 新增：期待命令输出状态
-            lastPasswordAttemptTime: 0,     // 新增：上次密码尝试时间，防止重复处理
-            isHandlingPasswordError: false, // 新增：标记是否正在处理密码错误
+            expectingCommandOutput: false,  // 期待命令输出状态
+            lastPasswordAttemptTime: 0,     // 上次密码尝试时间，防止重复处理
+            isHandlingPasswordError: false, // 标记是否正在处理密码错误
+            passwordErrorCount: 0,          // 密码错误计数，用于忽略第一次错误
         };
 
         // 继承 EventEmitter

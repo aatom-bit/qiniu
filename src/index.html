@@ -1132,6 +1132,17 @@
 
             // 如果标题变化，刷新侧边栏标题
             renderHistory();
+
+            // 检测包管理操作是否完成（通过命令的特征判断）
+            if (state.pkgOperation && role === 'assistant') {
+                const pkgKeywords = ['已卸载', '已安装', '完成', 'done', '已完成', '删除成功', '安装成功'];
+                const isCompletion = pkgKeywords.some(keyword => content.includes(keyword));
+                
+                if (isCompletion) {
+                    console.log(`✅ 检测到包操作完成信号`);
+                    setTimeout(() => completePkgOperation(), 1000);
+                }
+            }
         });
 
         window.electronAPI.onAskPermission(async (data) => {
@@ -1554,8 +1565,9 @@
             });
         }
 
-        // TODO: 现在如果输入密码有误，无法在下次触发窗口；
-        // TODO: 现在无法正常安装卸载
+        // 跟踪包管理操作状态
+        state.pkgOperation = null; // 存储正在进行的包操作信息
+
         // 处理安装和卸载
         window.handlePkgAction = async (name, action) => {
             event.stopPropagation(); // 防止触发 tr 的 onclick
@@ -1568,19 +1580,45 @@
                 await window.electronAPI.installPkg(name) :
                 await window.electronAPI.removePkg(name);
 
-            // 切换到 AI 对话视图查看进度，或者直接静默执行
-            // 这里我们使用你现有的 runCommand 逻辑，它会自动处理 sudo 弹窗
-            alert(`指令已发送到终端: ${command}\n执行完成后请手动点击刷新。`);
+            // 记录当前包操作
+            state.pkgOperation = { name, action, command, startTime: Date.now() };
 
+            console.log(`📦 包管理操作: ${action} ${name}, 命令: ${command}`);
+
+            // 显示执行中的提示
+            showPkgOperationProgress(name, action);
+
+            // 执行命令（自动处理 sudo 弹窗）
             await window.electronAPI.runCommand(command, state.currentSessionIndex);
-
-            // 提示用户刷新
-            setTimeout(() => {
-                if (confirm("执行可能已完成，是否刷新包列表？")) loadPackages();
-            }, 5000);
         };
 
-        // 修改 selectPkg 显示操作按钮
+        function showPkgOperationProgress(name, action) {
+            // 在包列表中找到对应的操作按钮，显示加载状态
+            const actionBtns = document.querySelectorAll('.pkg-action-btn');
+            actionBtns.forEach(btn => {
+                if (btn.dataset.pkgName === name) {
+                    btn.disabled = true;
+                    btn.style.opacity = '0.5';
+                    btn.innerText = '⏳';
+                }
+            });
+        }
+
+        function completePkgOperation() {
+            // 恢复所有按钮状态
+            const actionBtns = document.querySelectorAll('.pkg-action-btn');
+            actionBtns.forEach(btn => {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+            });
+
+            // 自动刷新包列表
+            if (state.pkgOperation) {
+                console.log(`✅ 包管理操作完成: ${state.pkgOperation.action} ${state.pkgOperation.name}`);
+                state.pkgOperation = null;
+                loadPackages();
+            }
+        }
         async function selectPkg(pkg, trElement) {
             document.querySelectorAll('.pkg-table tr').forEach(r => r.classList.remove('selected'));
             trElement.classList.add('selected');
@@ -1617,8 +1655,21 @@
             searchTimer = setTimeout(handleSearchOrLoad, 400); // 400ms 防抖
         };
 
-        // 标签切换
-        document.getElementById('tab-installed').onclick = function () {
+        // 监听包管理操作完成事件
+        window.electronAPI.onPkgOperationComplete?.((data) => {
+            console.log(`📦 包管理操作完成回调:`, data);
+            completePkgOperation();
+        });
+
+        // 监听命令执行完成
+        window.electronAPI.onCommandComplete?.((data) => {
+            console.log(`⚡ 命令执行完成:`, data);
+            
+            // 如果当前正在进行包操作，执行完成后自动刷新
+            if (state.pkgOperation && document.getElementById('package-manager-view').style.display !== 'none') {
+                setTimeout(() => completePkgOperation(), 500);
+            }
+        });
             state.pkgMode = 'installed';
             this.classList.add('active');
             document.getElementById('tab-all').classList.remove('active');
@@ -1634,6 +1685,8 @@
             handleSearchOrLoad();
         };
 
+        // TODO: 包详情页显示安装状态和操作按钮；安装卸载后自动刷新列表；sudo 弹窗错误重试；安装卸载日志反馈等
+        // TODO: 目前迭代执行后的结果不会显示到用户界面上
         init();
     </script>
 </body>
