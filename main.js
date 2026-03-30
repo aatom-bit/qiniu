@@ -420,19 +420,42 @@ async function handleUserInput(content, sessionId, sessionCount = -1) {
     return aiFinalContent;
 }
 
-function onCommandFinished(isCompelted, consoleNum) {
+function onCommandFinished(isCompelted, consoleNum, task = '') {
     console.log(`任务完成回调: consoleNum=${consoleNum}, isCompleted=${isCompelted}`);
+    const finalMessage = `任务 '${task}': ${isCompelted ? '已完成' : '执行失败'}。`;
+
+    // 推送到聊天消息流，让用户看到最终状态
+    const session = getSession(chatHistory, consoleNum, true, -1);
+    session.messages.push({ role: 'assistant', content: finalMessage });
+    saveHistory(chatHistory);
+
+    if (mainWin && mainWin.webContents) {
+        mainWin.webContents.send('chat:ai-response', {
+            role: 'assistant',
+            content: finalMessage,
+            sessionId: consoleNum
+        });
+    }
+
     // 通知前端任务完成
     if (mainWin && mainWin.webContents) {
         mainWin.webContents.send('command-complete', { 
             isCompleted: isCompelted,
             consoleNum: consoleNum,
-            message: `任务 ${isCompelted ? '已完成' : '执行失败'}` 
+            message: `任务 ${isCompelted ? '已完成' : '执行失败'}`
         });
     }
-    return `任务 ${isCompelted ? '已完成' : '执行失败'}`;
+    return finalMessage;
 }
 consoleAssistant.taskCompleteCallbackAddlistener(onCommandFinished.bind(this));
+
+function onStageCommandFinished(stageData = {}) {
+    console.log(`阶段完成回调:`, stageData);
+    if (mainWin && mainWin.webContents) {
+        mainWin.webContents.send('command-stage-update', stageData);
+    }
+}
+consoleAssistant.stageCompleteCallbackAddlistener(onStageCommandFinished.bind(this));
 
 // 监听主窗口按钮事件
 ipcMain.on('toggle-ball', (event, show) => {
@@ -477,6 +500,19 @@ ipcMain.handle('chat:send', async (event, { text, sessionId, sessionCount }) => 
         result = `获取ai助手执行结果失败, error: ${error}`;
     }
     return result;
+});
+
+ipcMain.handle('chat:getShellWarning', async (event, content = '') => {
+    try {
+        if (!content || typeof content !== 'string') {
+            return '';
+        }
+        const ret = await consoleAssistant.normalConversation(content, true);
+        return ret || '';
+    } catch (error) {
+        console.error('获取 shell 警告失败:', error);
+        return '';
+    }
 });
 
 // 获取历史

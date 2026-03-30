@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     sessionSwitch: (sessionId) => ipcRenderer.invoke('chat:session-switch', sessionId),
     sendMessage: (msg) => ipcRenderer.invoke('chat:send', msg),
+    getShellWarning: (content) => ipcRenderer.invoke('chat:getShellWarning', content),
     getHistory: () => ipcRenderer.invoke('chat:getHistory'),
     createSession: () => ipcRenderer.invoke('chat:createSession'),
     deleteSession: (sessionId) => ipcRenderer.invoke('chat:deleteSession', sessionId),
@@ -34,6 +35,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removePkg: (name) => ipcRenderer.invoke('pkg:remove', name),
 
     onCommandComplete: (callback) => ipcRenderer.on('command-complete', (_event, result) => callback(result)),
+    onCommandStageUpdate: (callback) => ipcRenderer.on('command-stage-update', (_event, result) => callback(result)),
     
     // // 如果需要控制窗口移动或关闭，也可以暴露：
     //     moveWindow: (win, dx, dy) => {

@@ -96,3 +96,6 @@ yarn.lock          # 如果你使用 Yarn
 
 # TypeScript
 *.tsbuildinfo
+
+# Deprecated
+index_.html

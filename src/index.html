@@ -1027,6 +1027,47 @@
             msgContainer.scrollTop = msgContainer.scrollHeight;
         }
 
+        function appendAssistantMessageToSession(sessionId, content) {
+            if (typeof sessionId !== 'number' || sessionId < 0 || !content) {
+                return;
+            }
+
+            if (!state.history[sessionId]) {
+                state.history[sessionId] = { title: `新会话 ${sessionId + 1}`, messages: [] };
+            }
+
+            state.history[sessionId].messages.push({ role: 'assistant', content });
+
+            if (sessionId === state.currentSessionIndex) {
+                appendMessageUI('assistant', content);
+                scrollToBottom();
+            }
+
+            renderHistory();
+        }
+
+        function formatStageUpdateContent(data = {}) {
+            const step = data.step || 1;
+            const status = data.status === 'timeout' ? '超时' : '完成';
+            const command = data.command || '未知命令';
+            const previewRaw = (data.preview || '').trim();
+            const preview = previewRaw.length > 0 ? previewRaw : '（无输出）';
+
+            return [
+                `🔄 第 ${step} 阶段执行${status}`,
+                '',
+                '命令：',
+                '```sh',
+                command,
+                '```',
+                '',
+                '输出摘要：',
+                '```text',
+                preview,
+                '```'
+            ].join('\n');
+        }
+
         // 事件监听
         document.getElementById('new-chat-btn').onclick = createNewChat;
         sendBtn.onclick = send;
@@ -1190,6 +1231,20 @@
         });
 
         async function showRunConfirmationDialog(message, command) {
+            let shellWarning = '';
+            try {
+                shellWarning = await window.electronAPI.getShellWarning(command || message || '');
+            } catch (error) {
+                console.warn('获取 shell 警告失败:', error);
+            }
+
+            const shellWarningBlock = shellWarning ? `
+                        <div style="background: #2a2f3a; border-left: 3px solid #3498db; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                            <p style="margin: 0 0 6px 0; color: #9fd3ff; font-size: 12px;">🛡️ Shell 警告</p>
+                            <p style="margin: 0; color: #d6e9ff; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;">${shellWarning}</p>
+                        </div>
+            ` : '';
+
             return new Promise((resolve) => {
                 const backdrop = document.createElement('div');
                 backdrop.style.cssText = `
@@ -1236,6 +1291,8 @@
                                 overflow-x: auto;
                             ">${command}</code>
                         </div>
+
+                        ${shellWarningBlock}
                         
                         <div style="background: #3a2a2a; border-left: 3px solid #f39c12; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
                             <p style="margin: 0; color: #ffcc99; font-size: 13px;">⚠️ 请确保你信任此命令的来源</p>
@@ -1302,6 +1359,13 @@
         }
 
         async function showSudoPasswordDialog(message, command, retry = false) {
+            let shellWarning = '';
+            try {
+                shellWarning = await window.electronAPI.getShellWarning(command || message || '');
+            } catch (error) {
+                console.warn('获取 shell 警告失败:', error);
+            }
+
             return new Promise((resolve) => {
                 // 创建模态对话框
                 const backdrop = document.createElement('div');
@@ -1363,6 +1427,22 @@
 </div>
 ` : "";
 
+                let shellWarningBlock = shellWarning ? `
+<div style="
+    background:#2a2f3a;
+    border-left:3px solid #3498db;
+    padding:10px;
+    margin-bottom:12px;
+    color:#d6e9ff;
+    font-size:12px;
+    line-height:1.5;
+    white-space:pre-wrap;
+    word-break:break-word;">
+<div style="color:#9fd3ff; margin-bottom:6px; font-size:12px;">🛡️ Shell 警告</div>
+${shellWarning}
+</div>
+` : "";
+
                 dialog.innerHTML = `
                     <div style="margin-bottom: 20px;font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;">
                         <h2 style="margin: 0 0 12px 0; color: #fff; font-size: 18px;">🔐 需要管理员密码</h2>
@@ -1374,6 +1454,7 @@
                         ${retryNotice}
 
                         ${commandDisplay}
+                        ${shellWarningBlock}
                         <p style="margin: 0; color: #ccc; font-size: 14px;">${message}</p>
                     </div>
                     <div style="margin-bottom: 16px;">
@@ -1705,6 +1786,14 @@
             if (state.pkgOperation && document.getElementById('package-manager-view').style.display !== 'none') {
                 setTimeout(() => completePkgOperation(), 500);
             }
+        });
+
+        // 监听每阶段命令执行完成，实时追加到聊天 UI
+        window.electronAPI.onCommandStageUpdate?.((data) => {
+            console.log('📍 阶段更新:', data);
+            const sessionId = data.consoleNum;
+            const stageMessage = formatStageUpdateContent(data);
+            appendAssistantMessageToSession(sessionId, stageMessage);
         });
         
         // 标签切换

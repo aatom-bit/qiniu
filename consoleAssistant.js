@@ -12,6 +12,7 @@ const correctAssistantPrompt = '你是一个linux助手,你已经根据用户的
 const codeAssistantPrompt = '你是一个linux助手,你需要根据用户的需求生成对应的代码，并通过sh在命令行中完成操作，仅返回可在命令行中执行的命令，注意sudo权限控制，下面是用户指令。';
 
 const normalAssistantPrompt = '你是一个linux平台下的ai助手';
+const resultAssistantPrompt = normalAssistantPrompt + '，当前要在shell中执行命令。请简要总结脚本执行的效果和可能的风险，30字以内。';
 
 const maxRetry = 10;
 
@@ -31,10 +32,21 @@ class ConsoleAssistant {
         });
 
         this.taskCompleteCallback = []; //callback sign like (isCompelted, consoleNum)
+        this.stageCompleteCallback = []; // callback sign like (stageData)
         this.permissionRequester = permissionRequester; // 权限请求函数（从main.js传入）
 
         this.createNewConsole(0);
         this.terminal.processDoneCallbacksAddListener(this.onCommandDone.bind(this));
+    }
+
+    emitStageCompletion(stageData) {
+        this.stageCompleteCallback.forEach(cb => {
+            try {
+                cb(stageData);
+            } catch (e) {
+                console.error('阶段回调执行失败:', e);
+            }
+        });
     }
 
     /**
@@ -68,16 +80,16 @@ class ConsoleAssistant {
         }
     }
 
-    async _fetchRealCommand(consoleInfo, task, taskCategory, correcting = false) {
+    async _fetchRealCommand(consoleInfo, task, taskCategory, correcting = false, commandOutput = '') {
         let ret = null;
         if (taskCategory === 'code') {
             ret = await consoleInfo.codeAssistant.interact(
-                correcting ? `命令输出: ${task}` : task,
+                correcting ? `任务原始目标 ${task}。命令输出: ${commandOutput}` : task,
                 correcting ? correctAssistantPrompt : null
             );
         } else {
             ret = await consoleInfo.shellAssistant.interact(
-                correcting ? `命令输出: ${task}` : task,
+                correcting ? `任务原始目标 ${task}。命令输出: ${commandOutput}` : task,
                 correcting ? correctAssistantPrompt : null
             );
         }
@@ -112,7 +124,7 @@ class ConsoleAssistant {
         consoleInfo.taskCategory = taskCategory;
         consoleInfo.lastTaskCategory = taskCategory;
 
-        let command = await this._fetchRealCommand(consoleInfo, task, taskCategory, correcting);
+        let command = await this._fetchRealCommand(consoleInfo, consoleInfo.lastTask, taskCategory, correcting, task);
         if (command.startsWith('error:')) {
             const errorLog = `error: 获取命令错误，得到: ${command.length > 6 ? command.substring(6) : command}`;
             console.log(errorLog);
@@ -196,7 +208,7 @@ class ConsoleAssistant {
                 reason: 'AI 直接判断任务已完成',
                 timestamp: new Date().toISOString()
             });
-            this.taskCompleteCallback.forEach(cb => cb(true, consoleNum));
+            this.taskCompleteCallback.forEach(cb => cb(true, consoleNum, consoleInfo.task));
             return `✅ 任务完成`;
         }
 
@@ -332,7 +344,7 @@ class ConsoleAssistant {
     //     }
     // }
 
-    async onCommandDone(processId, fullReport, rawOutput) {
+    async onCommandDone(processId, fullReport, rawOutput, executedCommand = '', terminalStatus = '') {
         let consoleNum = this.reflectionMap.get(processId);
         let consoleInfo = this.consoles.get(consoleNum);
 
@@ -351,6 +363,22 @@ class ConsoleAssistant {
             timestamp: new Date().toISOString()
         });
 
+        const aiDecisions = consoleInfo.iterationHistory.filter(h => h.type === 'ai_decision');
+        const currentDecision = aiDecisions[aiDecisions.length - 1] || {};
+        const stageStatus = terminalStatus || (fullReport.includes('状态: 超时') ? 'timeout' : 'completed');
+        const commandText = executedCommand || currentDecision.command || currentDecision.decision || '未知命令';
+        const stepNumber = aiDecisions.length || (consoleInfo.tryCount + 1);
+        this.emitStageCompletion({
+            consoleNum,
+            processId,
+            step: stepNumber,
+            status: stageStatus,
+            command: commandText,
+            output: rawOutput || '',
+            preview: (rawOutput || '').substring(0, 500),
+            timestamp: new Date().toISOString()
+        });
+
         // 检查是否超过重试次数
         if (consoleInfo.tryCount >= this.maxRetry) {
             console.log(`❌ 达到最大自动化步骤限制 (${this.maxRetry}步)，停止执行。`);
@@ -360,7 +388,7 @@ class ConsoleAssistant {
                 reason: '达到最大重试次数',
                 timestamp: new Date().toISOString()
             });
-            this.taskCompleteCallback.forEach(cb => cb(false, consoleNum));
+            this.taskCompleteCallback.forEach(cb => cb(false, consoleNum, consoleInfo.lastTask));
             consoleInfo.tryCount = 0;
             return;
         }
@@ -368,6 +396,10 @@ class ConsoleAssistant {
         // 2. 将“原始终端输出”传给 AI，询问下一步
         // 注意：correcting 设为 true，告诉 AI 这是一个结果检查过程
         const nextStep = await this.getConsoleTask(consoleInfo, rawOutput, consoleInfo.taskCategory, true);
+        const normalizedNextStep = (nextStep || '').toString().trim();
+        const noNextActionSignals = ['null', 'none', 'nil', 'n/a', '无', '无需继续'];
+        const isNoNextAction = normalizedNextStep.length === 0 ||
+            noNextActionSignals.includes(normalizedNextStep.toLowerCase());
 
         // 增加尝试计数
         consoleInfo.tryCount++;
@@ -375,10 +407,24 @@ class ConsoleAssistant {
         consoleInfo.iterationHistory.push({
             step: consoleInfo.tryCount + 1,
             type: 'ai_decision',
-            decision: nextStep,
+            decision: normalizedNextStep || '[no-next-action]',
             timestamp: new Date().toISOString()
         });
-        if (nextStep.includes('ass!done')) {
+
+        if (isNoNextAction) {
+            console.log(`✅ AI 未提供后续命令，判定当前任务已完成`);
+            consoleInfo.iterationHistory.push({
+                step: consoleInfo.tryCount + 1,
+                type: 'task_complete',
+                reason: 'AI 返回空决策/无后续动作',
+                timestamp: new Date().toISOString()
+            });
+            this.taskCompleteCallback.forEach(cb => cb(true, consoleNum, consoleInfo.lastTask));
+            consoleInfo.tryCount = 0;
+            return;
+        }
+
+        if (normalizedNextStep.includes('ass!done')) {
             console.log(`✅ AI 确认任务 "${consoleInfo.lastTask}" 已圆满完成！`);
             consoleInfo.iterationHistory.push({
                 step: consoleInfo.tryCount + 1,
@@ -386,10 +432,10 @@ class ConsoleAssistant {
                 reason: 'AI 确认任务完成',
                 timestamp: new Date().toISOString()
             });
-            this.taskCompleteCallback.forEach(cb => cb(true, consoleNum));
+            this.taskCompleteCallback.forEach(cb => cb(true, consoleNum, consoleInfo.lastTask));
             consoleInfo.tryCount = 0; // 重置计数
             return;
-        } else if (nextStep.startsWith('error:')) {
+        } else if (normalizedNextStep.startsWith('error:')) {
             // console.log(`❌ 自动化链条断裂: ${nextStep}`);
             // this.taskCompleteCallback.forEach(cb => cb(false, consoleNum));
 
@@ -397,7 +443,7 @@ class ConsoleAssistant {
             consoleInfo.iterationHistory.push({
                 step: consoleInfo.tryCount + 1,
                 type: 'ai_error',
-                error: nextStep,
+                error: normalizedNextStep,
                 timestamp: new Date().toISOString()
             });
 
@@ -421,7 +467,7 @@ class ConsoleAssistant {
         } else {
             // 5. 自动执行下一条指令
             console.log(`🔄 AI 提交了后续指令，准备执行...`);
-            await this._executeCommandWithPermission(nextStep, consoleInfo);
+            await this._executeCommandWithPermission(normalizedNextStep, consoleInfo);
         }
     }
 
@@ -491,8 +537,8 @@ class ConsoleAssistant {
         }
     }
 
-    async normalConversation(content) {
-        const ret = await this.normalAssistant.interact(content);
+    async normalConversation(content, getShellWarning = false) {
+        const ret = await this.normalAssistant.interact(content, getShellWarning ? resultAssistantPrompt : null);
         return ret;
     }
 
@@ -508,6 +554,12 @@ class ConsoleAssistant {
     taskCompleteCallbackAddlistener(event) {
         if (event) {
             this.taskCompleteCallback.push(event);
+        }
+    }
+
+    stageCompleteCallbackAddlistener(event) {
+        if (event) {
+            this.stageCompleteCallback.push(event);
         }
     }
 }

@@ -152,6 +152,32 @@ class AdvancedTerminal extends EventEmitter {
         this.rl.prompt();
     }
 
+    cleanupTimedOutProcess(processId, reason = 'timeout') {
+        const procInfo = this.processes.get(processId);
+        if (!procInfo) {
+            return;
+        }
+
+        try {
+            if (procInfo.process) {
+                procInfo.process.kill();
+            }
+        } catch (error) {
+            console.log(`⚠️ 清理超时进程失败: ${error.message}`);
+        }
+
+        procInfo.status = reason;
+        procInfo.userInputEnabled = true;
+        procInfo.pendingCommands = [];
+        this.processes.delete(processId);
+
+        // 不修改 processId 语义；同编号下次会自动重建进程。
+        if (this.activeProcessId === processId) {
+            this.activeProcessId = null;
+            this.updatePrompt();
+        }
+    }
+
     showWelcome() {
         console.log('🌟 终端控制器初始化完成');
         console.log('可用命令:');
@@ -339,7 +365,7 @@ class AdvancedTerminal extends EventEmitter {
                 silenceTimer = setTimeout(() => {
                     console.log("⚠️ 检测到长时间静默，尝试强制收尾...");
                     onComplete({ status: 'completed', output: procInfo.processesOutput });
-                }, 60000); // 60秒静默
+                }, 120000); // 120秒静默
             };
 
             const cleanup = () => {
@@ -352,6 +378,7 @@ class AdvancedTerminal extends EventEmitter {
                 procInfo.removeListener('command_complete', onComplete);
                 console.log('\n⏰ 命令执行超时，但进程仍在运行');
                 this.notifyCommandCompletion(processId, procInfo, command, 'timeout');
+                this.cleanupTimedOutProcess(processId, 'timeout');
                 resolve({ status: 'timeout', output: '' });
             }, 60000); // 1分钟超时
 
@@ -409,6 +436,7 @@ class AdvancedTerminal extends EventEmitter {
                 procInfo.removeListener('command_complete', onComplete);
                 console.log('\n⏰ 命令执行超时');
                 this.notifyCommandCompletion(processId, procInfo, command, 'timeout');
+                this.cleanupTimedOutProcess(processId, 'timeout');
                 resolve({ status: 'timeout', output: '' });
             }, 300000);
 
@@ -714,14 +742,13 @@ class AdvancedTerminal extends EventEmitter {
                             break;
                         }
                     }
-                    
-                    // 提示符应该在输出的最后，且不应该太接近命令日志
-                    if (lastNonEmptyLineIndex > 1 && 
-                        (lastNonEmptyLine === '$' || /^[$#%>]\s*$/.test(lastNonEmptyLine) || lastNonEmptyLine.endsWith('$ '))) {
-                        
+
+                    // 只要最后非空行是合法提示符就可判定完成。
+                    // 这里不再要求必须是 "$"，兼容 user@host:path$ 等提示符。
+                    if (lastNonEmptyLineIndex > 1 && this.isShellPrompt(lastNonEmptyLine)) {
                         // 防止在刚发送命令后立即触发（需要至少有一些输出）
                         const commandPlus = procInfo.lastCommand ? procInfo.lastCommand.length : 0;
-                        if (cleanOutput.length > commandPlus + 50) {
+                        if (cleanOutput.length > commandPlus + 20) {
                             this.handlePtyCommandComplete(procInfo, procInfo.processesOutput, processId);
                         }
                     }
@@ -1206,7 +1233,7 @@ class AdvancedTerminal extends EventEmitter {
         // 激活回调
         this.processDoneCallbacks.forEach(callback => {
             // callback(processId, processFinData); // 确定这里返回值
-            callback(processId, processFinData, procInfo.processesOutput);
+            callback(processId, processFinData, procInfo.processesOutput, command, status);
         });
     }
 
