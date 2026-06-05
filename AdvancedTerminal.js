@@ -725,10 +725,10 @@ class AdvancedTerminal extends EventEmitter {
             // 只在接收到足够的数据后才尝试检测完成
             const cleanOutput = procInfo.processesOutput.replace(this.ANSI_REGEX, '');
             
-            // 需要至少包含命令回显 + 命令输出 + 提示符（3行以上）
+            // 需要至少包含命令回显 + 命令输出 + 提示符（2行以上）
             const lines = cleanOutput.split(/\r?\n/);
             
-            if (lines.length > 3) {
+            if (lines.length > 1) {
                 // 检查最后一行是否是 shell 提示符
                 if (this.isShellPrompt(procInfo.processesOutput)) {
                     // 额外验证：最后一个非空行应该是提示符
@@ -745,12 +745,8 @@ class AdvancedTerminal extends EventEmitter {
 
                     // 只要最后非空行是合法提示符就可判定完成。
                     // 这里不再要求必须是 "$"，兼容 user@host:path$ 等提示符。
-                    if (lastNonEmptyLineIndex > 1 && this.isShellPrompt(lastNonEmptyLine)) {
-                        // 防止在刚发送命令后立即触发（需要至少有一些输出）
-                        const commandPlus = procInfo.lastCommand ? procInfo.lastCommand.length : 0;
-                        if (cleanOutput.length > commandPlus + 20) {
-                            this.handlePtyCommandComplete(procInfo, procInfo.processesOutput, processId);
-                        }
+                    if (lastNonEmptyLineIndex > 0 && this.isShellPrompt(lastNonEmptyLine)) {
+                        this.handlePtyCommandComplete(procInfo, procInfo.processesOutput, processId);
                     }
                 }
             }

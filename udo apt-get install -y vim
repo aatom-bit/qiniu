@@ -1,0 +1,57 @@
+Desired=Unknown/Install/Remove/Purge/Hold
+| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
+|/ Err?=(none)/Reinst-required (Status,Err: uppercase=bad)
+||/ Name                                             Version                                   Architecture Description
++++-================================================-=========================================-============-================================================================================
+ii  7zip                                             23.01+dfsg-11                             amd64        7-Zip file archiver with a high compression ratio
+ii  accountsservice                                  23.13.9-2ubuntu6                          amd64        query and manipulate user account information
+ii  accountsservice-ubuntu-schemas                   0.0.7+21.10.20210712-0ubuntu3             all          AccountsService schemas for Ubuntu
+ii  acl                                              2.3.2-1build1.1                           amd64        access control list - utilities
+ii  activity-log-manager                             0.9.7-0ubuntu31                           amd64        blacklist configuration user interface for Zeitgeist
+ii  adduser                                          3.137ubuntu1                              all          add and remove users and groups
+ii  adwaita-icon-theme                               46.0-1                                    all          default icon theme of GNOME
+ii  alsa-topology-conf                               1.2.5.1-2                                 all          ALSA topology configuration files
+ii  alsa-ucm-conf                                    1.2.10-1ubuntu5.7                         all          ALSA Use Case Manager configuration files
+ii  alsa-utils                                       1.2.9-1ubuntu5                            amd64        Utilities for configuring and using ALSA
+ii  apg                                              2.2.3.dfsg.1-5build3                      amd64        Automated Password Generator - Standalone version
+ii  apparmor                                         4.0.1really4.0.1-0ubuntu0.24.04.3         amd64        user-space parser utility for AppArmor
+ii  apport                                           2.28.1-0ubuntu3.8                         all          automatically generate crash reports for debugging
+ii  apport-core-dump-handler                         2.28.1-0ubuntu3.8                         all          Kernel core dump handler for Apport
+ii  apport-symptoms                                  0.25                                      all          symptom scripts for apport
+ii  appstream                                        1.0.2-1build6                             amd64        Software component metadata management
+ii  apt                                              2.8.3                                     amd64        commandline package manager
+ii  apt-transport-https                              2.8.3                                     all          transitional package for https support
+ii  apt-utils                                        2.8.3                                     amd64        package management related utility programs
+ii  aspell                                           0.60.8.1-1build1                          amd64        GNU Aspell spell-checker
+ii  aspell-en                                        2020.12.07-0-1                            all          English dictionary for GNU Aspell
+ii  at-spi2-common                                   2.52.0-1build1                            all          Assistive Technology Service Provider Interface (common files)
+ii  at-spi2-core                                     2.52.0-1build1                            amd64        Assistive Technology Service Provider Interface (D-Bus core)
+ii  autoconf                                         2.71-3                                    all          automatic configure script builder
+ii  automake                                         1:1.16.5-1.3ubuntu1                       all          Tool for generating GNU Standards-compliant Makefiles
+ii  autopoint                                        0.21-14ubuntu2                            all          tool for setting up gettext infrastructure in a source package
+ii  autotools-dev                                    20220109.1                                all          Update infrastructure for config.{guess,sub} files
+ii  avahi-daemon                                     0.8-13ubuntu6.2                           amd64        Avahi mDNS/DNS-SD daemon
+ii  avahi-utils                                      0.8-13ubuntu6.2                           amd64        Avahi browsing, publishing and discovery utilities
+ii  bamfdaemon                                       0.5.6+22.04.20220217-0ubuntu5             amd64        Window matching library - daemon
+ii  base-files                                       13ubuntu10.1                              amd64        Debian base system miscellaneous files
+ii  base-passwd                                      3.6.3build1                               amd64        Debian base system master password and group files
+ii  bash                                             5.2.21-2ubuntu4                           amd64        GNU Bourne Again SHell
+ii  bash-completion                                  1:2.11-8                                  all          programmable completion for the bash shell
+ii  bc                                               1.07.1-3ubuntu4                           amd64        GNU bc arbitrary precision calculator language
+ii  bind9-dnsutils                                   1:9.18.39-0ubuntu0.24.04.5                amd64        Clients provided with BIND 9
+ii  bind9-host                                       1:9.18.39-0ubuntu0.24.04.5                amd64        DNS Lookup Utility
+ii  bind9-libs:amd64                                 1:9.18.39-0ubuntu0.24.04.5                amd64        Shared Libraries used by BIND 9
+ii  binutils                                         2.42-4ubuntu2.8                           amd64        GNU assembler, linker and binary utilities
+ii  binutils-common:amd64                            2.42-4ubuntu2.8                           amd64        Common files for the GNU assembler, linker and binary utilities
+ii  binutils-x86-64-linux-gnu                        2.42-4ubuntu2.8                           amd64        GNU binary utilities, for x86-64-linux-gnu target
+ii  bluez                                            5.72-0ubuntu5.5                           amd64        Bluetooth tools and daemons
+ii  bluez-obexd                                      5.72-0ubuntu5.5                           amd64        bluez obex daemon
+ii  bsdextrautils                                    2.39.3-9ubuntu6.5                         amd64        extra utilities from 4.4BSD-Lite
+ii  bsdutils                                         1:2.39.3-9ubuntu6.5                       amd64        basic utilities from 4.4BSD-Lite
+ii  bubblewrap                                       0.9.0-1ubuntu0.1                          amd64        utility for unprivileged chroot and namespace manipulation
+ii  build-essential                                  12.10ubuntu1                              amd64        Informational list of build-essential packages
+ii  byobu                                            6.11-0ubuntu1                             all          text window manager, shell multiplexer, integrated DevOps environment
+ii  bzip2                                            1.0.8-5.1build0.1                         amd64        high-quality block-sorting file compressor - utilities
+ii  ca-certificates                                  20240203                                  all          Common CA certificates
+ii  cheese-common                                    44.1-1build4                              all          Common files for the Cheese tool to take pictures and videos
+ii  cloud-guest-utils                                0.33-1                            

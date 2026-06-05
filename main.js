@@ -7,7 +7,7 @@ const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
 
-const { Listen, ListenClose } = require('./util/rtasr-ws-node.js');
+// const { Listen, ListenClose } = require('./util/rtasr-ws-node.js');
 const { loadHistory, saveHistory, initHistory, getSession } = require('./util/historyStore');
 const { containSudoCommand } = require('./AdvancedTerminal.js');
 const { ConsoleAssistant } = require('./consoleAssistant');
@@ -592,46 +592,46 @@ let listenProcessing = false;
 let currentListenPromise = null;
 
 // 长按悬浮球自动录音并处理
-ipcMain.on('quick-listen', async (event, data) => {
-    if (data.isBegin) {
-        // 开始录音
-        if (listenProcessing) return;
-        listenProcessing = true;
-        mainWin.webContents.send('update-status', { role: 'ai', content: '正在聆听...' });
+// ipcMain.on('quick-listen', async (event, data) => {
+//     if (data.isBegin) {
+//         // 开始录音
+//         if (listenProcessing) return;
+//         listenProcessing = true;
+//         mainWin.webContents.send('update-status', { role: 'ai', content: '正在聆听...' });
 
-        // 立即启动 Listen，不要等待
-        currentListenPromise = Listen(data.isLongPress);
-    } else if (data.isLongPress) {
-        // 停止录音并发送识别
-        if (!listenProcessing) return;
+//         // 立即启动 Listen，不要等待
+//         currentListenPromise = Listen(data.isLongPress);
+//     } else if (data.isLongPress) {
+//         // 停止录音并发送识别
+//         if (!listenProcessing) return;
 
-        ListenClose();
+//         ListenClose();
 
-        // 等待识别结果
-        try {
-            const text = await currentListenPromise;
-            if (!text) {
-                listenProcessing = false;
-                return;
-            }
+//         // 等待识别结果
+//         try {
+//             const text = await currentListenPromise;
+//             if (!text) {
+//                 listenProcessing = false;
+//                 return;
+//             }
 
-            // 将识别结果填充到输入框
-            mainWin.webContents.send('update-status', { role: 'voice-input', content: text });
-        } catch (error) {
-            console.error('ASR 识别出错:', error);
-        } finally {
-            listenProcessing = false;
-            currentListenPromise = null;
-        }
-    } else {
-        // 取消录音（少于500ms）
-        if (!listenProcessing) return;
+//             // 将识别结果填充到输入框
+//             mainWin.webContents.send('update-status', { role: 'voice-input', content: text });
+//         } catch (error) {
+//             console.error('ASR 识别出错:', error);
+//         } finally {
+//             listenProcessing = false;
+//             currentListenPromise = null;
+//         }
+//     } else {
+//         // 取消录音（少于500ms）
+//         if (!listenProcessing) return;
 
-        ListenClose();
-        listenProcessing = false;
-        currentListenPromise = null;
-    }
-});
+//         ListenClose();
+//         listenProcessing = false;
+//         currentListenPromise = null;
+//     }
+// });
 
 // 渲染窗口
 app.on('ready', () => {

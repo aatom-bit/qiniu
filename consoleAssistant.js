@@ -16,6 +16,24 @@ const resultAssistantPrompt = normalAssistantPrompt + '，当前要在shell中�
 
 const maxRetry = 10;
 
+function sanitizeAICommandResponse(text) {
+    if (!text) {
+        return '';
+    }
+
+    let normalized = String(text).trim();
+
+    // 去掉首尾代码围栏：```bash / ```sh / ```
+    normalized = normalized.replace(/^```(?:[a-zA-Z0-9_-]+)?\s*\n?/i, '');
+    normalized = normalized.replace(/\n?\s*```\s*$/i, '');
+
+    // 兜底清理单独成行的围栏标记
+    normalized = normalized.replace(/^\s*```(?:[a-zA-Z0-9_-]+)?\s*$/gm, '');
+    normalized = normalized.replace(/^\s*```\s*$/gm, '');
+
+    return normalized.trim();
+}
+
 class ConsoleAssistant {
     constructor(permissionRequester = null) {
         this.maxRetry = 5;
@@ -66,10 +84,25 @@ class ConsoleAssistant {
             lastTask: null,
             lastTaskCategory: null,
             iterationHistory: [], // 记录每次迭代的AI决策
+            autoFlowActive: false, // 当前是否处于自动迭代流程
+            pendingAutoCommand: null, // 正在等待完成回调的自动化命令
         };
 
         this.consoles.set(key, console);
         this.reflectionMap.set(console.processId, key);
+    }
+
+    clearTaskContext(consoleInfo) {
+        if (!consoleInfo) {
+            return;
+        }
+
+        consoleInfo.lastTask = null;
+        consoleInfo.lastTaskCategory = null;
+        consoleInfo.iterationHistory = [];
+        consoleInfo.tryCount = 0;
+        consoleInfo.autoFlowActive = false;
+        consoleInfo.pendingAutoCommand = null;
     }
 
     removeConsole(key) {
@@ -125,6 +158,7 @@ class ConsoleAssistant {
         consoleInfo.lastTaskCategory = taskCategory;
 
         let command = await this._fetchRealCommand(consoleInfo, consoleInfo.lastTask, taskCategory, correcting, task);
+        command = sanitizeAICommandResponse(command);
         if (command.startsWith('error:')) {
             const errorLog = `error: 获取命令错误，得到: ${command.length > 6 ? command.substring(6) : command}`;
             console.log(errorLog);
@@ -184,6 +218,8 @@ class ConsoleAssistant {
             consoleInfo.tryCount = 0;
             consoleInfo.iterationHistory = [];
         }
+        // 进入自动迭代会话
+        consoleInfo.autoFlowActive = true;
 
         // 生成第一条指令
         const command = await this.getConsoleTask(consoleInfo, task, taskCategory, correcting);
@@ -209,11 +245,13 @@ class ConsoleAssistant {
                 timestamp: new Date().toISOString()
             });
             this.taskCompleteCallback.forEach(cb => cb(true, consoleNum, consoleInfo.task));
+            this.clearTaskContext(consoleInfo);
             return `✅ 任务完成`;
         }
 
         // 启动第一次执行
         // 执行后，terminal 会触发 onCommandDone，从而进入上面的自动化循环
+        consoleInfo.pendingAutoCommand = command;
         return await this._executeCommandWithPermission(command, consoleInfo);
     }
 
@@ -266,6 +304,7 @@ class ConsoleAssistant {
             // sudo 命令：获取密码（密码即确认）
             prePassword = await this.getPassword(command);
             if (!prePassword) {
+                this.clearTaskContext(consoleInfo);
                 return `❌ 执行取消\n需要管理员密码才能执行此命令`;
             }
             shouldExecute = true;
@@ -273,6 +312,7 @@ class ConsoleAssistant {
             // 普通命令：获取用户确认
             const userConfirm = await this.getUserPermission(command);
             if (!userConfirm) {
+                this.clearTaskContext(consoleInfo);
                 return `⏸️ 执行取消`;
             }
             shouldExecute = true;
@@ -303,6 +343,7 @@ class ConsoleAssistant {
                     return simplified;
                 }
             } catch (error) {
+                this.clearTaskContext(consoleInfo);
                 return `❌ 执行异常: ${error.message}`;
             }
         }
@@ -350,6 +391,26 @@ class ConsoleAssistant {
 
         if (!consoleInfo) return;
 
+        // 仅处理自动迭代流程中的“预期命令完成”回调，避免任务完成后继续迭代。
+        if (!consoleInfo.autoFlowActive) {
+            return;
+        }
+
+        const pending = (consoleInfo.pendingAutoCommand || '').toString().trim();
+        const executed = (executedCommand || '').toString().trim();
+
+        if (!pending) {
+            return;
+        }
+
+        if (executed && pending !== executed) {
+            console.log(`ℹ️ 忽略非预期命令完成回调: expected="${pending}", actual="${executed}"`);
+            return;
+        }
+
+        // 命令已完成，消费本次 pending，等待 AI 决策下一步。
+        consoleInfo.pendingAutoCommand = null;
+
         // 如果 AI 还没开始处理或者已经在处理中，防止竞态（可选）
         console.log(`\n[系统回旋] 正在分析第 ${consoleInfo.tryCount + 1} 步执行结果...`);
 
@@ -389,7 +450,7 @@ class ConsoleAssistant {
                 timestamp: new Date().toISOString()
             });
             this.taskCompleteCallback.forEach(cb => cb(false, consoleNum, consoleInfo.lastTask));
-            consoleInfo.tryCount = 0;
+            this.clearTaskContext(consoleInfo);
             return;
         }
 
@@ -420,7 +481,7 @@ class ConsoleAssistant {
                 timestamp: new Date().toISOString()
             });
             this.taskCompleteCallback.forEach(cb => cb(true, consoleNum, consoleInfo.lastTask));
-            consoleInfo.tryCount = 0;
+            this.clearTaskContext(consoleInfo);
             return;
         }
 
@@ -433,7 +494,7 @@ class ConsoleAssistant {
                 timestamp: new Date().toISOString()
             });
             this.taskCompleteCallback.forEach(cb => cb(true, consoleNum, consoleInfo.lastTask));
-            consoleInfo.tryCount = 0; // 重置计数
+            this.clearTaskContext(consoleInfo);
             return;
         } else if (normalizedNextStep.startsWith('error:')) {
             // console.log(`❌ 自动化链条断裂: ${nextStep}`);
@@ -463,10 +524,12 @@ class ConsoleAssistant {
                     timestamp: new Date().toISOString()
                 });
                 this.taskCompleteCallback.forEach(cb => cb(false, consoleNum));
+                this.clearTaskContext(consoleInfo);
             }
         } else {
             // 5. 自动执行下一条指令
             console.log(`🔄 AI 提交了后续指令，准备执行...`);
+            consoleInfo.pendingAutoCommand = normalizedNextStep;
             await this._executeCommandWithPermission(normalizedNextStep, consoleInfo);
         }
     }
@@ -530,7 +593,20 @@ class ConsoleAssistant {
                 command: command,
                 message: '确认是否执行此命令？'
             });
-            return permission === true;
+
+            // 兼容两种返回：
+            // 1) boolean: true/false
+            // 2) object: { approved: true/false }
+            if (typeof permission === 'boolean') {
+                console.log(`用户权限确认结果: ${permission}`);
+                return permission;
+            }
+
+            if (permission && typeof permission === 'object' && 'approved' in permission) {
+                return permission.approved === true;
+            }
+
+            return false;
         } catch (error) {
             console.error('获取权限失败:', error);
             return false;

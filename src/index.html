@@ -1217,10 +1217,12 @@
 
             } else if (type === 'run-confirmation') {
                 const ok = await showRunConfirmationDialog(message, command);
+                console.log(`showRunConfirmationDialog result: ${ok}`);
                 result = { approved: ok };
 
             } else {
                 const ok = await showMyCustomDialog(message);
+                console.log(`showMyCustomDialog result: ${ok}`);
                 result = { approved: ok };
             }
 
@@ -1275,7 +1277,7 @@
                 `;
 
                 dialog.innerHTML = `
-                    <div>
+                    <form id="runConfirmForm">
                         <h2 style="margin: 0 0 16px 0; color: #fff; font-size: 18px;font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;">⚡ 命令确认</h2>
                         <p style="margin: 0 0 12px 0; color: #aaa; font-size: 13px;">${message}</p>
                         
@@ -1300,7 +1302,7 @@
                         </div>
                         
                         <div style="display: flex; gap: 12px;">
-                            <button id="runConfirmBtn" style="
+                            <button type="submit" id="runConfirmBtn" style="
                                 flex: 1;
                                 padding: 10px 16px;
                                 background: #27ae60;
@@ -1311,7 +1313,7 @@
                                 font-size: 14px;
                                 font-weight: 500;
                             ">执行</button>
-                            <button id="runCancelBtn" style="
+                            <button type="button" id="runCancelBtn" style="
                                 flex: 1;
                                 padding: 10px 16px;
                                 background: #444;
@@ -1322,12 +1324,13 @@
                                 font-size: 14px;
                             ">取消</button>
                         </div>
-                    </div>
+                    </form>
                 `;
 
                 backdrop.appendChild(dialog);
                 document.body.appendChild(backdrop);
 
+                const form = dialog.querySelector('#runConfirmForm');
                 const confirmBtn = dialog.querySelector('#runConfirmBtn');
                 const cancelBtn = dialog.querySelector('#runCancelBtn');
 
@@ -1335,7 +1338,8 @@
                     backdrop.remove();
                 };
 
-                confirmBtn.onclick = () => {
+                form.onsubmit = (e) => {
+                    e.preventDefault();
                     cleanup();
                     resolve(true);
                 };
@@ -1346,14 +1350,15 @@
                 };
 
                 // Escape 取消
-                const handleKeyUp = (e) => {
+                const handleKeyDown = (e) => {
                     if (e.key === 'Escape') {
-                        backdrop.removeEventListener('keyup', handleKeyUp);
+                        e.preventDefault();
                         cleanup();
                         resolve(false);
                     }
                 };
-                backdrop.addEventListener('keyup', handleKeyUp);
+                backdrop.addEventListener('keydown', handleKeyDown);
+                backdrop.tabIndex = -1;
                 backdrop.focus();
             });
         }
